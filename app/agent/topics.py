@@ -110,6 +110,8 @@ def detect_topic(message: str) -> Topic:
 
     normalized = message.casefold()
     tokens = set(re.findall(r"[\wа-яё]+", normalized, flags=re.UNICODE))
+    if "nginx" in tokens and "502" in tokens:
+        return next(topic for topic in TOPICS if topic.key == "nginx_502")
     for topic in TOPICS:
         if any(_matches_trigger(normalized, tokens, trigger) for trigger in topic.triggers):
             return topic
