@@ -88,6 +88,18 @@ def test_detect_topic_prefers_specific_nginx_over_http_502():
     assert detect_topic("nginx 502 bad gateway").key == "nginx_502"
 
 
+def test_detect_topic_handles_nginx_502_without_broad_nginx_trigger():
+    assert detect_topic("nginx отдаёт 502").key == "nginx_502"
+
+
+def test_detect_topic_nginx_failed_routes_to_systemd_not_nginx_502():
+    assert detect_topic("nginx не стартует systemd failed").key == "systemd"
+
+
+def test_detect_topic_nginx_certificate_expired_routes_to_http_tls():
+    assert detect_topic("nginx certificate expired").key == "http_tls"
+
+
 def test_detect_topic_prefers_specific_ssh_over_generic_permission_denied():
     assert detect_topic("ssh permission denied publickey").key == "ssh"
 
@@ -131,3 +143,27 @@ def test_detect_topic_routes_ssh_timeout_to_ssh():
 def test_detect_topic_routes_port_22_to_ssh_or_port_consistently():
     # If message explicitly says SSH, it must be ssh.
     assert detect_topic("ssh порт 22 не отвечает").key == "ssh"
+
+
+def test_assistant_analyzes_diagnostic_output_instead_of_repeating_plan():
+    answer = answer_for(
+        """curl -I https://app.example.local
+HTTP/1.1 502 Bad Gateway
+
+sudo tail -n 100 /var/log/nginx/error.log
+connect() failed (111: Connection refused) while connecting to upstream
+"""
+    )
+
+    assert "Похоже, ты прислал диагностический вывод" in answer
+    assert "Findings" in answer
+    assert "Гипотезы" in answer
+    assert "upstream" in answer
+
+
+def test_assistant_regular_symptom_still_returns_topic_plan():
+    answer = answer_for("nginx отдаёт 502")
+
+    assert "Похоже, это тема: `nginx_502`" in answer
+    assert "Безопасный старт диагностики" in answer
+    assert "Похоже, ты прислал диагностический вывод" not in answer
