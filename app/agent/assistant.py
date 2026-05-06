@@ -1,14 +1,7 @@
+from app.agent.plans import DiagnosticPlan, get_plan
+from app.agent.topics import detect_topic
 from app.kb.models import KnowledgeDocument, SearchResult
 from app.kb.search import search_documents
-
-
-SAFE_COMMANDS = [
-    "cat /etc/resolv.conf",
-    "resolvectl status",
-    "getent hosts example.local",
-    "resolvectl query example.local",
-    "dig example.local",
-]
 
 
 class DeterministicAssistant:
@@ -19,38 +12,45 @@ class DeterministicAssistant:
         self.max_results = max_results
 
     def answer(self, message: str) -> tuple[str, list[SearchResult]]:
-        sources = search_documents(message, self.documents, self.max_results)
-        return self._format_answer(sources), sources
+        topic = detect_topic(message)
+        plan = get_plan(topic.key)
+        enhanced_query = f"{message} {topic.search_hints}".strip()
+        sources = search_documents(enhanced_query, self.documents, self.max_results)
+        return self._format_answer(topic.key, plan, sources), sources
 
-    def _format_answer(self, sources: list[SearchResult]) -> str:
-        lines: list[str] = []
+    def _format_answer(self, topic_key: str, plan: DiagnosticPlan, sources: list[SearchResult]) -> str:
+        lines: list[str] = [f"Похоже, это тема: `{topic_key}`.", ""]
+
         if sources:
-            lines.append("Я нашёл несколько релевантных материалов в локальной базе знаний:")
+            lines.append("Я нашёл релевантные материалы в базе:")
             lines.append("")
             for index, source in enumerate(sources, start=1):
                 lines.append(f"{index}. {source.title} — `{source.path}` (score: {source.score:g})")
         else:
-            lines.append("В локальной базе знаний пока не нашлось явных совпадений по запросу.")
-            lines.append("Можно добавить Markdown-runbook в `knowledge_base/`, и я начну учитывать его в ответах.")
+            lines.append("В базе не нашлось точного совпадения, поэтому даю общий безопасный план.")
 
         lines.extend(
             [
                 "",
-                "Я не могу подтвердить точную причину без контекста и вывода диагностики, поэтому предлагаю безопасный старт:",
+                "Безопасный старт диагностики:",
                 "",
                 "```bash",
-                *SAFE_COMMANDS,
+                *plan.commands,
                 "```",
                 "",
                 "Как читать результат:",
                 "",
-                "- если FQDN работает, а shortname нет — проверь search domain;",
-                "- если `getent` пустой, но `dig` работает — проверь NSS/nsswitch;",
-                "- если DNS-сервер не отвечает напрямую — проверь DNS service, маршрут или firewall;",
-                "- если проблема не про DNS, пришли тему и обезличенные симптомы — я сопоставлю их с базой знаний.",
+            ]
+        )
+        lines.extend(f"- {item}" for item in plan.how_to_read)
+        lines.extend(["", "Что НЕ делать первым шагом:", ""])
+        lines.extend(f"- {item}" for item in plan.what_not_to_do)
+        lines.extend(
+            [
                 "",
-                "Пришли обезличенный вывод команд: убери пароли, токены, cookies, публичные IP, домены, логины и ФИО.",
-                "На этом MVP этапе я ничего не выполняю на хостах и работаю только с локальной Markdown-базой.",
+                "Пришли обезличенный вывод команд, и я помогу построить гипотезы.",
+                "Убери пароли, токены, cookies, private keys, публичные IP, домены, логины и ФИО.",
+                "На этом MVP этапе приложение ничего не выполняет на хостах: команды выше — только текстовые подсказки для оператора.",
             ]
         )
         return "\n".join(lines)
