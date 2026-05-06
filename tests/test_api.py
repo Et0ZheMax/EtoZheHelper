@@ -23,13 +23,16 @@ def test_kb_stats():
     assert payload["types"]["runbook"] >= 1
 
 
-def test_chat_returns_session_answer_and_sources():
+def test_chat_returns_session_answer_sources_and_topic_plan():
     with TestClient(app) as client:
         response = client.post("/api/chat", json={"message": "Не работает DNS на Ubuntu", "session_id": None})
     assert response.status_code == 200
     payload = response.json()
     assert isinstance(payload["session_id"], int)
     assert "answer" in payload and payload["answer"]
+    assert "Похоже, это тема: `dns`" in payload["answer"]
+    assert "resolvectl status" in payload["answer"]
+    assert "getent hosts" in payload["answer"]
     assert "sources" in payload
     assert payload["sources"]
 

@@ -17,6 +17,27 @@ EtoZheHelper — будущий внутренний инженерный пом
 - Пишет простые audit events.
 - Имеет pytest-тесты для KB loader, search и API.
 
+## Topic-aware assistant
+
+Deterministic assistant теперь определяет troubleshooting-тему по ключевым словам, усиливает KB search hints для этой темы и добавляет к ответу безопасный read-only диагностический план. Поддерживаемые темы:
+
+- `dns`;
+- `port_connectivity`;
+- `http_tls`;
+- `nginx_502`;
+- `systemd`;
+- `disk_space`;
+- `performance`;
+- `ssh`;
+- `apt_dpkg`;
+- `permissions_sudo`;
+- `sssd_ad`;
+- `cups_printers`;
+- `docker`;
+- `generic`.
+
+Команды из планов не выполняются приложением: они выводятся только как текстовые подсказки для оператора. Приложение по-прежнему не подключается по SSH, не запускает shell/executor, не вызывает внешние LLM/API и не отправляет данные наружу.
+
 ## Что MVP пока НЕ умеет
 
 - Не выполняет SSH-подключения.
