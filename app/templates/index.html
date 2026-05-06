@@ -10,10 +10,36 @@
         </div>
         <div class="stat path">
             <span>Путь к базе</span>
-            <code>{{ knowledge_base_dir }}</code>
+            <code id="knowledge-base-dir">{{ knowledge_base_dir }}</code>
         </div>
+        <button id="reload-kb" class="secondary" type="button">Reload KB</button>
+        <p id="reload-status" class="muted small" aria-live="polite">Кэш KB обновляется автоматически при изменении Markdown-файлов.</p>
+
+        <section class="taxonomy">
+            <h2>Domains</h2>
+            <div id="domains-list" class="pill-list">
+                {% for name, count in domains.items() %}
+                <span class="pill"><span>{{ name }}</span><strong>{{ count }}</strong></span>
+                {% else %}
+                <span class="muted small">Нет domain metadata.</span>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="taxonomy">
+            <h2>Types</h2>
+            <div id="types-list" class="pill-list">
+                {% for name, count in types.items() %}
+                <span class="pill"><span>{{ name }}</span><strong>{{ count }}</strong></span>
+                {% else %}
+                <span class="muted small">Нет type metadata.</span>
+                {% endfor %}
+            </div>
+        </section>
+
         <div class="safety">
             <h2>Безопасность</h2>
+            <div class="safety-mode">MVP safety mode: no remote execution</div>
             <ul>
                 <li>Не вставляй пароли.</li>
                 <li>Не вставляй токены, cookies и ключи.</li>
@@ -34,7 +60,7 @@
         <div id="chat-messages" class="messages" aria-live="polite">
             <div class="message assistant">
                 <strong>Assistant</strong>
-                <p>Привет! Опиши проблему. Я поищу по локальной Markdown-базе и предложу безопасный старт диагностики.</p>
+                <div>Привет! Опиши проблему. Я поищу по локальной Markdown-базе и предложу безопасный старт диагностики.</div>
             </div>
         </div>
         <form id="chat-form" class="composer">
@@ -45,7 +71,7 @@
 
     <aside class="sources card">
         <h2>Sources / Diagnostics</h2>
-        <p class="muted">После ответа здесь появятся найденные документы и фрагменты. Диагностический executor появится только в будущих безопасных этапах.</p>
+        <p class="muted">После ответа здесь появятся найденные документы: path, title, score и безопасный snippet. Executor появится только в будущих безопасных этапах.</p>
         <div id="sources-list" class="sources-list empty">Источники пока не выбраны.</div>
     </aside>
 </div>

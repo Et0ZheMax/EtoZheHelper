@@ -9,6 +9,13 @@ class HealthResponse(BaseModel):
 class KbStatsResponse(BaseModel):
     documents_count: int
     knowledge_base_dir: str
+    domains: dict[str, int] = Field(default_factory=dict)
+    types: dict[str, int] = Field(default_factory=dict)
+
+
+class KbReloadResponse(BaseModel):
+    status: str
+    documents_count: int
 
 
 class ChatRequest(BaseModel):
