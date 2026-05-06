@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="layout">
+    <aside class="sidebar card">
+        <h1>EtoZheHelper</h1>
+        <p class="muted">Локальный инженерный помощник для troubleshooting и Markdown knowledge base.</p>
+        <div class="stat">
+            <span>Документов KB</span>
+            <strong id="documents-count">{{ documents_count }}</strong>
+        </div>
+        <div class="stat path">
+            <span>Путь к базе</span>
+            <code>{{ knowledge_base_dir }}</code>
+        </div>
+        <div class="safety">
+            <h2>Безопасность</h2>
+            <ul>
+                <li>Не вставляй пароли.</li>
+                <li>Не вставляй токены, cookies и ключи.</li>
+                <li>Обезличивай IP, домены, логины и ФИО.</li>
+                <li>MVP ничего не выполняет на серверах.</li>
+            </ul>
+        </div>
+    </aside>
+
+    <main class="chat card">
+        <div class="chat-header">
+            <div>
+                <h2>Chat</h2>
+                <p class="muted">Спроси про симптом, ошибку или runbook из локальной базы.</p>
+            </div>
+            <span class="badge">local-only</span>
+        </div>
+        <div id="chat-messages" class="messages" aria-live="polite">
+            <div class="message assistant">
+                <strong>Assistant</strong>
+                <p>Привет! Опиши проблему. Я поищу по локальной Markdown-базе и предложу безопасный старт диагностики.</p>
+            </div>
+        </div>
+        <form id="chat-form" class="composer">
+            <textarea id="message-input" rows="3" placeholder="Например: Не работает DNS на Ubuntu" required></textarea>
+            <button type="submit">Отправить</button>
+        </form>
+    </main>
+
+    <aside class="sources card">
+        <h2>Sources / Diagnostics</h2>
+        <p class="muted">После ответа здесь появятся найденные документы и фрагменты. Диагностический executor появится только в будущих безопасных этапах.</p>
+        <div id="sources-list" class="sources-list empty">Источники пока не выбраны.</div>
+    </aside>
+</div>
+{% endblock %}
