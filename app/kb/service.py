@@ -13,6 +13,8 @@ class KnowledgeBaseStats:
     knowledge_base_dir: str
     domains: dict[str, int] = field(default_factory=dict)
     types: dict[str, int] = field(default_factory=dict)
+    risks: dict[str, int] = field(default_factory=dict)
+    tags: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -85,11 +87,15 @@ class KnowledgeBaseService:
     def _build_stats(root: Path, documents: list[KnowledgeDocument]) -> KnowledgeBaseStats:
         domains = Counter(doc.domain for doc in documents if doc.domain)
         types = Counter(doc.doc_type for doc in documents if doc.doc_type)
+        risks = Counter(doc.risk for doc in documents if doc.risk)
+        tags = Counter(tag for doc in documents for tag in doc.tags if tag)
         return KnowledgeBaseStats(
             documents_count=len(documents),
             knowledge_base_dir=str(root),
             domains=dict(sorted(domains.items())),
             types=dict(sorted(types.items())),
+            risks=dict(sorted(risks.items())),
+            tags=dict(sorted(tags.items())),
         )
 
 

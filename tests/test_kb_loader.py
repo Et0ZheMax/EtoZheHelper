@@ -33,3 +33,27 @@ Use resolvectl status.
     assert doc.domain == "linux"
     assert doc.risk == "low"
     assert doc.requires_root is False
+
+
+def test_service_stats_include_risks_and_tags(tmp_path):
+    from app.kb.service import KnowledgeBaseService
+
+    kb = tmp_path / "kb"
+    kb.mkdir()
+    (kb / "dns.md").write_text(
+        """---
+type: runbook
+domain: linux
+tags: [dns, resolved]
+risk: low
+---
+
+# DNS Runbook
+""",
+        encoding="utf-8",
+    )
+
+    snapshot = KnowledgeBaseService().get_knowledge_base(kb)
+
+    assert snapshot.stats.risks == {"low": 1}
+    assert snapshot.stats.tags == {"dns": 1, "resolved": 1}

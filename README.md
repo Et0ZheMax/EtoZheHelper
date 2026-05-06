@@ -11,7 +11,7 @@ EtoZheHelper — будущий внутренний инженерный пом
 - Ищет по title, path, headings, tags, domain и content без embeddings и внешних API.
 - Кэширует локальную Markdown KB в памяти и автоматически инвалидирует кэш по count/latest mtime Markdown-файлов.
 - Даёт ручной reload базы знаний через `POST /api/kb/reload`.
-- Возвращает stats по количеству документов, `domain` и `type` metadata.
+- Возвращает stats по количеству документов, `domain`, `type`, `risk` и `tags` metadata.
 - Формирует deterministic ответ на основе найденных документов.
 - Сохраняет chat sessions и messages в SQLite.
 - Пишет простые audit events.
@@ -145,6 +145,14 @@ curl http://127.0.0.1:8000/api/kb/stats
   "types": {
     "runbook": 10,
     "cheatsheet": 8
+  },
+  "risks": {
+    "low": 10,
+    "medium": 2
+  },
+  "tags": {
+    "dns": 5,
+    "linux": 12
   }
 }
 ```
@@ -252,3 +260,88 @@ Stage 1 намеренно не содержит SSH, shell executor, remote exe
 4. Добавить executor только как явно разрешённый и аудитируемый слой.
 5. Расширить UI: история сессий, загрузка диагностического вывода, фильтры sources.
 6. Добавить GUI wrapper для локального desktop-сценария.
+
+## Импорт большой Markdown knowledge base
+
+Для подготовки большой локальной базы вроде `IT-Playbook-Max` добавлен безопасный importer `scripts/import_kb.py`. Скрипт работает только с локальной файловой системой, не вызывает shell, не выполняет файлы из источника/архива и копирует только Markdown (`.md`). Скрытые пути и небезопасные/нецелевые файлы вроде `.env`, `.key`, `.pem`, `.p12`, `.sqlite`, `.db`, `.zip` и любые non-Markdown файлы игнорируются.
+
+Импорт из папки с сохранением относительной структуры:
+
+```bash
+python scripts/import_kb.py --source /path/to/IT-Playbook-Max --target knowledge_base
+```
+
+Dry-run перед реальной синхронизацией:
+
+```bash
+python scripts/import_kb.py --source /path/to/IT-Playbook-Max --target knowledge_base --prefix imported/IT-Playbook-Max --dry-run
+```
+
+Реальный импорт в подпапку через `--prefix`:
+
+```bash
+python scripts/import_kb.py --source /path/to/IT-Playbook-Max --target knowledge_base --prefix imported/IT-Playbook-Max
+```
+
+Импорт из zip-архива:
+
+```bash
+python scripts/import_kb.py --zip /path/to/IT-Playbook-Max.zip --target knowledge_base --prefix imported/IT-Playbook-Max
+```
+
+Zip import защищён от zip slip/path traversal: записи с абсолютными путями или `..` не распаковываются и не могут записать файлы вне `--target`. Архив не исполняется и не распаковывается целиком: importer читает только разрешённые `.md` entries и пишет их в target/prefix.
+
+Importer больше не имеет отдельного `--overwrite`: одинаковые файлы считаются `skipped`, отличающиеся существующие `.md` обновляются и считаются `updated`, отсутствующие считаются `copied`. Importer печатает summary по итогам работы:
+
+```text
+copied: 10
+updated: 2
+skipped: 30
+ignored: 5
+errors: 0
+```
+
+## KB Browser API
+
+Список документов доступен через:
+
+```bash
+curl "http://127.0.0.1:8000/api/kb/documents?domain=linux&limit=10"
+```
+
+Параметры списка:
+
+- `q` — локальный текстовый поиск;
+- `domain` — фильтр по frontmatter `domain`;
+- `doc_type` — фильтр по frontmatter `type`;
+- `risk` — фильтр по frontmatter `risk`;
+- `tag` — фильтр по одному tag;
+- `limit` и `offset` — пагинация.
+
+Пример detail-запроса:
+
+```bash
+curl "http://127.0.0.1:8000/api/kb/document?path=README.md"
+```
+
+`/api/kb/document` принимает только KB-relative path уже загруженного Markdown-документа. Абсолютные пути, `../` traversal и неизвестные документы возвращают `404`; абсолютные server filesystem paths наружу не раскрываются.
+
+## KB Browser в UI
+
+На `/` в левой панели есть блок `KB Browser`: search input, фильтры `domain`, `type`, `risk`, `tag` и кнопка `Search`. Правая панель разделена на `Sources from last answer` и `KB Browser`. Результаты browser показывают title, KB-relative path, domain/type/risk, tags и snippet. Клик по документу открывает detail как plain text; содержимое вставляется через `textContent`, Markdown не рендерится как HTML.
+
+После `Reload KB` UI обновляет stats и filter options. Chat behavior и источники последнего ответа остаются прежними.
+
+## Улучшения локального поиска
+
+Локальный поиск остаётся deterministic и dependency-free: без embeddings, внешнего search engine и внешних LLM/API. Query нормализуется через casefold/tokenization для русских и английских слов, применяется небольшой synonyms/hints map (`dns`, `порт`, `nginx`, `место`, `docker`), snippets ограничены примерно 400 символами и стараются попадать в релевантную heading-section.
+
+## Security notes для KB import/browser
+
+- Нет SSH, shell execution, remote execution и запуска пользовательских команд.
+- Нет Ansible/Docker/Terraform execution.
+- Нет внешних LLM/API и отправки данных наружу.
+- Importer копирует только `.md` и игнорирует hidden/suspicious/non-Markdown файлы.
+- Zip import блокирует path traversal и не пишет вне target.
+- Document API читает только документы, уже загруженные из KB, и не раскрывает server absolute paths.
+- UI вставляет document content и snippets как plain text, без unsanitized HTML rendering.
