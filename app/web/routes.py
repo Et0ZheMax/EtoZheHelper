@@ -20,5 +20,7 @@ def index(request: Request, settings: Settings = Depends(get_settings)):
             "knowledge_base_dir": snapshot.stats.knowledge_base_dir,
             "domains": snapshot.stats.domains,
             "types": snapshot.stats.types,
+            "risks": snapshot.stats.risks,
+            "tags": snapshot.stats.tags,
         },
     )

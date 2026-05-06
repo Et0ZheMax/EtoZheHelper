@@ -15,6 +15,43 @@
         <button id="reload-kb" class="secondary" type="button">Reload KB</button>
         <p id="reload-status" class="muted small" aria-live="polite">Кэш KB обновляется автоматически при изменении Markdown-файлов.</p>
 
+
+        <section class="kb-controls">
+            <h2>KB Browser</h2>
+            <label for="kb-search-input">Search KB</label>
+            <input id="kb-search-input" type="search" placeholder="dns, nginx, порт...">
+            <label for="kb-domain-filter">Domain</label>
+            <select id="kb-domain-filter">
+                <option value="">All domains</option>
+                {% for name in domains.keys() %}
+                <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+            <label for="kb-type-filter">Type</label>
+            <select id="kb-type-filter">
+                <option value="">All types</option>
+                {% for name in types.keys() %}
+                <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+            <label for="kb-risk-filter">Risk</label>
+            <select id="kb-risk-filter">
+                <option value="">All risks</option>
+                {% for name in risks.keys() %}
+                <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </select>
+            <label for="kb-tag-filter">Tag</label>
+            <input id="kb-tag-filter" type="search" list="kb-tag-options" placeholder="tag, e.g. dns">
+            <datalist id="kb-tag-options">
+                {% for name in tags.keys() %}
+                <option value="{{ name }}"></option>
+                {% endfor %}
+            </datalist>
+            <button id="kb-search-button" class="secondary" type="button">Search</button>
+            <p id="kb-browser-status" class="muted small" aria-live="polite">Ищи и открывай Markdown-документы без выполнения команд.</p>
+        </section>
+
         <section class="taxonomy">
             <h2>Domains</h2>
             <div id="domains-list" class="pill-list">
@@ -71,9 +108,23 @@
     </main>
 
     <aside class="sources card">
-        <h2>Sources / Diagnostics</h2>
-        <p class="muted">После ответа здесь появятся найденные документы: path, title, score и безопасный snippet. Executor появится только в будущих безопасных этапах.</p>
-        <div id="sources-list" class="sources-list empty">Источники пока не выбраны.</div>
+        <h2>Sources / KB</h2>
+        <p class="muted">Источники и браузер локальной Markdown-базы. Executor появится только в будущих безопасных этапах.</p>
+        <div class="panel-tabs" role="tablist" aria-label="Sources and KB browser">
+            <button id="sources-tab" class="tab active" type="button" data-panel="sources-panel">Sources from last answer</button>
+            <button id="browser-tab" class="tab" type="button" data-panel="browser-panel">KB Browser</button>
+        </div>
+        <section id="sources-panel" class="panel-section active">
+            <div id="sources-list" class="sources-list empty">Источники пока не выбраны.</div>
+        </section>
+        <section id="browser-panel" class="panel-section">
+            <div id="kb-results" class="sources-list empty">Выполни поиск KB в левой панели.</div>
+            <article id="kb-document-detail" class="document-detail" hidden>
+                <h3 id="kb-document-title"></h3>
+                <code id="kb-document-path"></code>
+                <pre id="kb-document-content"></pre>
+            </article>
+        </section>
     </aside>
 </div>
 {% endblock %}

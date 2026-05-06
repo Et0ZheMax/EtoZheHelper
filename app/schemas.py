@@ -11,6 +11,8 @@ class KbStatsResponse(BaseModel):
     knowledge_base_dir: str
     domains: dict[str, int] = Field(default_factory=dict)
     types: dict[str, int] = Field(default_factory=dict)
+    risks: dict[str, int] = Field(default_factory=dict)
+    tags: dict[str, int] = Field(default_factory=dict)
 
 
 class KbReloadResponse(BaseModel):
@@ -35,3 +37,28 @@ class ChatResponse(BaseModel):
     session_id: int
     answer: str
     sources: list[Source]
+
+
+class KbDocumentSummary(BaseModel):
+    path: str
+    title: str
+    domain: str | None = None
+    doc_type: str | None = None
+    risk: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    snippet: str
+
+
+class KbDocumentListResponse(BaseModel):
+    items: list[KbDocumentSummary]
+    total: int
+    limit: int
+    offset: int
+
+
+class KbDocumentDetailResponse(BaseModel):
+    path: str
+    title: str
+    content: str
+    metadata: dict[str, object] = Field(default_factory=dict)
+    headings: list[str] = Field(default_factory=list)
