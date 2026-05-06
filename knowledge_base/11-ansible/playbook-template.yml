@@ -1,0 +1,20 @@
+---
+- name: Example safe playbook
+  hosts: linux
+  become: true
+  gather_facts: true
+
+  vars:
+    dry_run_mode: false
+
+  tasks:
+    - name: Show target
+      ansible.builtin.debug:
+        msg: "Running on {{ inventory_hostname }} / {{ ansible_hostname }}"
+
+    - name: Ensure package installed
+      ansible.builtin.apt:
+        name: curl
+        state: present
+        update_cache: true
+      when: ansible_os_family == "Debian"
