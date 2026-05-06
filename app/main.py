@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.chat import router as api_router
 from app.audit.logger import log_event
-from app.config import get_settings
+from app.config import STATIC_DIR, get_settings
 from app.db import SessionLocal, init_db
 from app.web.routes import router as web_router
 
@@ -24,6 +24,6 @@ async def lifespan(app: FastAPI):
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(api_router, prefix="/api")
 app.include_router(web_router)
