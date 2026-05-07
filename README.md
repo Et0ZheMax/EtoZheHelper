@@ -13,7 +13,7 @@ EtoZheHelper — будущий внутренний инженерный пом
 - Даёт ручной reload базы знаний через `POST /api/kb/reload`.
 - Возвращает stats по количеству документов, `domain`, `type`, `risk` и `tags` metadata.
 - Формирует deterministic ответ на основе найденных документов.
-- Сохраняет chat sessions и messages в SQLite.
+- Сохраняет chat sessions и messages в SQLite и показывает Investigation history в UI.
 - Пишет простые audit events.
 - Имеет pytest-тесты для KB loader, search и API.
 
@@ -106,11 +106,35 @@ http://127.0.0.1:8000
 
 На странице есть три зоны:
 
-1. статус базы знаний, кнопка `Reload KB`, domains/types и safety-памятка;
-2. чат;
+1. статус базы знаний, список `Investigations`, кнопка `Reload KB`, domains/types и safety-памятка;
+2. чат с заголовком текущей investigation, кнопками `Rename` и `Delete`;
 3. `Sources / Diagnostics` с `path`, `title`, `score` и `snippet` найденных документов.
 
 UI остаётся lightweight: Jinja2, CSS и vanilla JS, без React/Next.js/npm.
+
+## Investigation history
+
+EtoZheHelper stores local troubleshooting sessions in SQLite. UI allows creating, opening, renaming and deleting investigations. Each chat message is stored locally; do not paste secrets/tokens/private keys.
+
+Investigation history endpoints:
+
+```bash
+curl http://127.0.0.1:8000/api/chat/sessions
+
+curl -X POST http://127.0.0.1:8000/api/chat/session \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Test investigation"}'
+
+curl http://127.0.0.1:8000/api/chat/session/1
+
+curl -X PATCH http://127.0.0.1:8000/api/chat/session/1 \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Renamed investigation"}'
+
+curl -X DELETE http://127.0.0.1:8000/api/chat/session/1
+```
+
+Session API actions write best-effort audit events for create/open/rename/delete. Deleting an investigation removes its related `chat_messages` before removing the `chat_sessions` row. Existing `POST /api/chat` still accepts `session_id:null` to create a new session and appends messages to an existing session when `session_id` is provided.
 
 ## KB cache и reload
 
@@ -181,6 +205,14 @@ curl -X POST http://127.0.0.1:8000/api/chat \
 ```
 
 Если передать несуществующий `session_id`, `/api/chat` вернёт `404`.
+
+Chat session API:
+
+- `GET /api/chat/sessions?limit=50&offset=0` — список investigations, новые по `updated_at` первыми;
+- `GET /api/chat/session/{session_id}` — metadata и история сообщений;
+- `POST /api/chat/session` — создать investigation, пустой title заменяется на `New investigation`;
+- `PATCH /api/chat/session/{session_id}` — переименовать investigation, title trim/max 120;
+- `DELETE /api/chat/session/{session_id}` — удалить investigation и связанные messages.
 
 ## Как запустить тесты и проверки
 
@@ -258,7 +290,7 @@ Stage 1 намеренно не содержит SSH, shell executor, remote exe
 2. Добавить embeddings/RAG в локальном или контролируемом режиме.
 3. Спроектировать policy engine для безопасных диагностических действий.
 4. Добавить executor только как явно разрешённый и аудитируемый слой.
-5. Расширить UI: история сессий, загрузка диагностического вывода, фильтры sources.
+5. Расширить UI: загрузка диагностического вывода и фильтры sources.
 6. Добавить GUI wrapper для локального desktop-сценария.
 
 ## Импорт большой Markdown knowledge base

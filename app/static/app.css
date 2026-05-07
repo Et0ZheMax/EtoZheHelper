@@ -270,3 +270,72 @@ button.tab.active {
     white-space: pre-wrap;
     overflow: auto;
 }
+.sessions-panel {
+    display: grid;
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+}
+.sessions-list {
+    display: grid;
+    gap: 8px;
+    max-height: 34vh;
+    overflow-y: auto;
+}
+.session-item {
+    display: grid;
+    gap: 5px;
+    width: 100%;
+    min-height: auto;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #f8fafc;
+    color: var(--text);
+    text-align: left;
+}
+.session-item:hover, .session-item:focus {
+    border-color: var(--accent);
+    background: #eef4ff;
+    outline: none;
+}
+.session-item.active {
+    border-color: var(--accent);
+    background: var(--user);
+}
+.session-title {
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+.session-meta {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+}
+.session-preview {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+.chat-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+button.compact {
+    min-height: 34px;
+    padding: 7px 12px;
+    border: 1px solid var(--border);
+    background: #f8fafc;
+    color: var(--text);
+    font-size: 13px;
+}
+button.compact:hover { background: #e2e8f0; }
+button.compact.danger {
+    border-color: #fecaca;
+    color: #991b1b;
+}
+button.compact.danger:hover { background: #fee2e2; }
