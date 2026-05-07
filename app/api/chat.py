@@ -8,7 +8,7 @@ from app.config import Settings, get_settings
 from app.db import get_db
 from app.kb.search import search_documents
 from app.kb.service import knowledge_base_service
-from app.models import ChatMessage, ChatSession, utcnow
+from app.models import ChatMessage, ChatSession, Host, utcnow
 from app.schemas import (
     ActionProposalResponse,
     ChatMessageResponse,
@@ -17,6 +17,7 @@ from app.schemas import (
     ChatSessionCreateRequest,
     ChatSessionDeleteResponse,
     ChatSessionDetailResponse,
+    ChatSessionHostUpdateRequest,
     ChatSessionListResponse,
     ChatSessionResponse,
     ChatSessionSummary,
@@ -53,7 +54,13 @@ def _preview_text(content: str | None, limit: int = SESSION_PREVIEW_LENGTH) -> s
 
 
 def _session_response(session: ChatSession) -> ChatSessionResponse:
-    return ChatSessionResponse(id=session.id, title=session.title, created_at=session.created_at, updated_at=session.updated_at)
+    return ChatSessionResponse(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        host_id=session.host_id,
+    )
 
 
 def _session_or_404(db: Session, session_id: int) -> ChatSession:
@@ -213,6 +220,7 @@ def chat_sessions(
                 title=session.title,
                 created_at=session.created_at,
                 updated_at=session.updated_at,
+                host_id=session.host_id,
                 messages_count=messages_count,
                 preview=_preview_text(latest_message.content if latest_message else ""),
             )
@@ -235,6 +243,7 @@ def chat_session_detail(session_id: int, db: Session = Depends(get_db)) -> ChatS
         title=session.title,
         created_at=session.created_at,
         updated_at=session.updated_at,
+        host_id=session.host_id,
         messages=[
             ChatMessageResponse(id=item.id, role=item.role, content=item.content, created_at=item.created_at)
             for item in messages
@@ -264,6 +273,20 @@ def update_chat_session(session_id: int, payload: ChatSessionUpdateRequest, db: 
     db.commit()
     db.refresh(session)
     log_event(db, "chat_session_renamed", {"session_id": session.id, "title": session.title})
+    return _session_response(session)
+
+
+@router.patch("/chat/session/{session_id}/host", response_model=ChatSessionResponse)
+def set_chat_session_host(session_id: int, payload: ChatSessionHostUpdateRequest, db: Session = Depends(get_db)) -> ChatSessionResponse:
+    session = _session_or_404(db, session_id)
+    if payload.host_id is not None and db.get(Host, payload.host_id) is None:
+        raise HTTPException(status_code=404, detail="Host not found")
+    session.host_id = payload.host_id
+    session.updated_at = utcnow()
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    log_event(db, "chat_session_host_set", {"session_id": session.id, "host_id": session.host_id})
     return _session_response(session)
 
 

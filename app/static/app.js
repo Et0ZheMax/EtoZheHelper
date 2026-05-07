@@ -2,6 +2,7 @@ let sessionId = null;
 let currentSessionTitle = "";
 let selectedHostId = null;
 let selectedHostName = "";
+let hostsById = new Map();
 
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message-input");
@@ -143,8 +144,43 @@ function setSelectedHost(host) {
     }
 }
 
+async function persistSessionHost(hostId) {
+    if (!sessionId) return;
+    const response = await fetch(`/api/chat/session/${sessionId}/host`, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({host_id: hostId}),
+    });
+    if (!response.ok) throw new Error(`Persist host failed: ${response.status}`);
+}
+
+async function selectHost(host, persist = true) {
+    setSelectedHost(host);
+    if (!persist || !sessionId) return;
+    try {
+        await persistSessionHost(host?.id || null);
+        if (hostsStatus) hostsStatus.textContent = host
+            ? `Selected host context saved: ${host.name}. No SSH connection was performed.`
+            : "Selected host context cleared. No SSH connection was performed.";
+    } catch (error) {
+        if (hostsStatus) hostsStatus.textContent = `Не удалось сохранить host context: ${error.message}`;
+    }
+}
+
+async function restoreSessionHost(hostId) {
+    if (!hostId) {
+        setSelectedHost(null);
+        return;
+    }
+    if (!hostsById.has(hostId)) {
+        await loadHosts();
+    }
+    setSelectedHost(hostsById.get(hostId) || null);
+}
+
 function renderHosts(items) {
     if (!hostsList) return;
+    hostsById = new Map((items || []).map((host) => [host.id, host]));
     hostsList.replaceChildren();
     hostsList.classList.remove("empty");
     if (!items.length) {
@@ -162,7 +198,7 @@ function renderHosts(items) {
         button.className = "host-item";
         button.dataset.hostId = String(host.id);
         button.classList.toggle("active", host.id === selectedHostId);
-        button.addEventListener("click", () => setSelectedHost(host));
+        button.addEventListener("click", () => selectHost(host));
 
         const title = document.createElement("span");
         title.className = "host-title";
@@ -222,7 +258,7 @@ async function createHostFromPrompt() {
         }
         const host = await response.json();
         await loadHosts();
-        setSelectedHost(host);
+        await selectHost(host);
         if (hostsStatus) hostsStatus.textContent = `Host added: ${host.name}. No SSH connection was performed.`;
     } catch (error) {
         if (hostsStatus) hostsStatus.textContent = `Не удалось добавить host: ${error.message}`;
@@ -287,6 +323,7 @@ async function createNewSession() {
         if (!response.ok) throw new Error(`Create failed: ${response.status}`);
         const data = await response.json();
         setCurrentSession(data.id, data.title);
+        if (selectedHostId) await persistSessionHost(selectedHostId);
         renderMessages([]);
         await loadSessions();
         input?.focus();
@@ -302,6 +339,7 @@ async function openSession(id) {
     if (!response.ok) throw new Error(`Session failed: ${response.status}`);
     const data = await response.json();
     setCurrentSession(data.id, data.title);
+    await restoreSessionHost(data.host_id);
     renderMessages(data.messages || []);
     await loadSessions();
     input?.focus();
@@ -586,6 +624,7 @@ form?.addEventListener("submit", async (event) => {
     const message = input.value.trim();
     if (!message) return;
 
+    const hadSession = Boolean(sessionId);
     appendMessage("user", message);
     input.value = "";
     const button = form.querySelector("button");
@@ -609,6 +648,7 @@ form?.addEventListener("submit", async (event) => {
         }
         const data = await response.json();
         sessionId = data.session_id;
+        if (!hadSession && selectedHostId) await persistSessionHost(selectedHostId);
         appendMessage("assistant", data.answer, data.actions || []);
         renderSources(data.sources || []);
         activatePanel("sources-panel");

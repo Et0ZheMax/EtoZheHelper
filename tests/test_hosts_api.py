@@ -117,3 +117,54 @@ def test_delete_referenced_ssh_profile_returns_409():
         assert delete_response.status_code == 409
 
         client.delete(f"/api/hosts/{host['id']}")
+
+
+def test_safe_ssh_profile_refs_accepted():
+    safe_refs = ["support-default", "ssh-agent", "keys/support-default", "vault-ref/support-default"]
+    with TestClient(app) as client:
+        for index, ref in enumerate(safe_refs):
+            response = client.post(
+                "/api/ssh-profiles",
+                json={
+                    "name": f"safe-ref-{index}",
+                    "username": "support",
+                    "auth_type": "key",
+                    "key_ref": ref,
+                    "password_ref": ref,
+                    "sudo_mode": "none",
+                },
+            )
+            assert response.status_code == 200
+            assert response.json()["key_ref"] == ref
+            assert response.json()["password_ref"] == ref
+
+
+def test_pem_like_key_ref_rejected():
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/ssh-profiles",
+            json={
+                "name": "pem-ref",
+                "username": "support",
+                "auth_type": "key",
+                "key_ref": "-----BEGIN OPENSSH PRIVATE KEY-----",
+                "sudo_mode": "none",
+            },
+        )
+    assert response.status_code == 422
+
+
+def test_token_like_password_ref_rejected():
+    token_like = "actualSecretWithVeryLongBlob" * 4
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/ssh-profiles",
+            json={
+                "name": "secret-ref",
+                "username": "support",
+                "auth_type": "password",
+                "password_ref": token_like,
+                "sudo_mode": "none",
+            },
+        )
+    assert response.status_code == 422

@@ -13,6 +13,14 @@ SAFE_TAG_RE = re.compile(r"^[A-Za-z0-9_.@:+-]{1,64}$")
 ALLOWED_AUTH_TYPES = {"key", "password", "agent", "manual"}
 ALLOWED_SUDO_MODES = {"none", "prompt", "nopasswd_limited"}
 SECRET_FIELD_NAMES = {"password", "private_key", "token", "secret"}
+REF_FORBIDDEN_RE = re.compile(r"[\r\n;|&<>$`\"']")
+PEM_MARKERS = (
+    "BEGIN PRIVATE KEY",
+    "BEGIN OPENSSH PRIVATE KEY",
+    "BEGIN RSA PRIVATE KEY",
+    "-----BEGIN",
+)
+TOKEN_SEPARATOR_CHARS = set("/._:@+-")
 
 
 def _trim(value: str | None) -> str | None:
@@ -57,6 +65,22 @@ def _reject_secret_extra_fields(data: Any) -> Any:
             names = ", ".join(sorted(forbidden))
             raise ValueError(f"Secret fields are not accepted: {names}")
     return data
+
+
+def _validate_non_secret_ref(value: str | None, field_name: str, max_length: int) -> str | None:
+    text = _trim(value)
+    if text is None or text == "":
+        return None
+    if len(text) > max_length:
+        raise ValueError(f"{field_name} must be at most {max_length} characters")
+    if REF_FORBIDDEN_RE.search(text):
+        raise ValueError(f"{field_name} contains unsupported characters")
+    upper_text = text.upper()
+    if any(marker in upper_text for marker in PEM_MARKERS):
+        raise ValueError(f"{field_name} must be a reference, not key material")
+    if len(text) > 80 and not any(separator in text for separator in TOKEN_SEPARATOR_CHARS):
+        raise ValueError(f"{field_name} looks like a secret blob; store a reference label only")
+    return text
 
 
 class HealthResponse(BaseModel):
@@ -164,6 +188,7 @@ class ChatSessionSummary(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    host_id: int | None = None
     messages_count: int
     preview: str
 
@@ -187,6 +212,7 @@ class ChatSessionDetailResponse(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    host_id: int | None = None
     messages: list[ChatMessageResponse]
 
 
@@ -215,6 +241,13 @@ class ChatSessionResponse(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    host_id: int | None = None
+
+
+class ChatSessionHostUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    host_id: int | None = None
 
 
 class ChatSessionDeleteResponse(BaseModel):
@@ -370,10 +403,15 @@ class SshProfileBaseRequest(BaseModel):
             raise ValueError("sudo_mode must be one of none, prompt, nopasswd_limited")
         return text
 
-    @field_validator("key_ref", "password_ref", mode="before")
+    @field_validator("key_ref", mode="before")
     @classmethod
-    def trim_refs(cls, value: str | None) -> str | None:
-        return _trim(value)
+    def validate_key_ref(cls, value: str | None) -> str | None:
+        return _validate_non_secret_ref(value, "key_ref", 500)
+
+    @field_validator("password_ref", mode="before")
+    @classmethod
+    def validate_password_ref(cls, value: str | None) -> str | None:
+        return _validate_non_secret_ref(value, "password_ref", 200)
 
 
 class SshProfileCreateRequest(SshProfileBaseRequest):

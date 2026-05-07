@@ -115,9 +115,9 @@ curl -X POST http://127.0.0.1:8000/api/hosts \
   -d '{"name":"bad","hostname":"app01;whoami","password":"secret"}'
 ```
 
-No passwords/private keys/tokens are stored. Fields with secret-looking names are rejected by request schemas. `key_ref` and `password_ref` are reference labels only; the app does not read key files and does not validate credentials by connecting.
+No passwords/private keys/tokens are stored. Fields with secret-looking names are rejected by request schemas. `key_ref` and `password_ref` are reference labels only; the app rejects PEM-like material, shell metacharacters, newlines and token-like blobs in those reference fields. The app does not read key files and does not validate credentials by connecting.
 
-The UI has a minimal `Hosts` panel that can add host metadata via prompts and select a current host context for the investigation. Selected host context is displayed next to action cards, but actions are still previews only and execution remains disabled.
+The UI has a minimal `Hosts` panel that can add host metadata via prompts and select a current host context for the investigation. Selected host context is persisted on the chat session as metadata only, and is displayed next to action cards, but actions are still previews only and execution remains disabled.
 
 ## Что MVP пока НЕ умеет
 
@@ -351,13 +351,15 @@ SQLite создаётся автоматически при старте по п
 
 - `chat_sessions`;
 - `chat_messages`;
+- `hosts`;
+- `ssh_profiles`;
 - `audit_events`.
 
 При добавлении user/assistant messages у chat session обновляется `updated_at`. Audit events пишутся best-effort и не должны ломать основной сценарий чата.
 
-## Ограничения Stage 10
+## Ограничения Stage 10.5
 
-Stage 10.5 намеренно не содержит SSH connect, shell executor, remote execution, local command execution, reachability checks, Ansible/Docker/Terraform execution, внешних LLM/API и отправки пользовательских данных наружу. Host Inventory и SSH Profiles хранят только metadata/non-secret references. Любые команды и action cards в ответах — это только previews/текстовые подсказки для оператора, а не действия приложения.
+Stage 10.5 намеренно не содержит SSH connect, shell executor, remote execution, local command execution, reachability checks, Ansible/Docker/Terraform execution, внешних LLM/API и отправки пользовательских данных наружу. Host Inventory и SSH Profiles хранят только metadata/non-secret references. Selected host context is persisted as metadata only. It is not used for execution in this stage. Любые команды и action cards в ответах — это только previews/текстовые подсказки для оператора, а не действия приложения.
 
 ## План следующих этапов
 
