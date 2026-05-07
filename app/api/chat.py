@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.agent.assistant import DeterministicAssistant
@@ -9,8 +10,16 @@ from app.kb.search import search_documents
 from app.kb.service import knowledge_base_service
 from app.models import ChatMessage, ChatSession, utcnow
 from app.schemas import (
+    ChatMessageResponse,
     ChatRequest,
     ChatResponse,
+    ChatSessionCreateRequest,
+    ChatSessionDeleteResponse,
+    ChatSessionDetailResponse,
+    ChatSessionListResponse,
+    ChatSessionResponse,
+    ChatSessionSummary,
+    ChatSessionUpdateRequest,
     HealthResponse,
     KbDocumentDetailResponse,
     KbDocumentListResponse,
@@ -21,6 +30,36 @@ from app.schemas import (
 )
 
 router = APIRouter()
+
+
+DEFAULT_SESSION_TITLE = "New investigation"
+MAX_SESSION_TITLE_LENGTH = 120
+SESSION_PREVIEW_LENGTH = 120
+
+
+def _normalize_session_title(title: str | None, default: str = DEFAULT_SESSION_TITLE) -> str:
+    normalized = (title or "").strip()
+    if not normalized:
+        normalized = default
+    return normalized[:MAX_SESSION_TITLE_LENGTH]
+
+
+def _preview_text(content: str | None, limit: int = SESSION_PREVIEW_LENGTH) -> str:
+    normalized = " ".join((content or "").split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 1].rstrip() + "…"
+
+
+def _session_response(session: ChatSession) -> ChatSessionResponse:
+    return ChatSessionResponse(id=session.id, title=session.title, created_at=session.created_at, updated_at=session.updated_at)
+
+
+def _session_or_404(db: Session, session_id: int) -> ChatSession:
+    session = db.get(ChatSession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Chat session not found")
+    return session
 
 
 def _short_snippet(content: str, limit: int = 400) -> str:
@@ -144,17 +183,111 @@ def kb_document(path: str = Query(min_length=1, max_length=1000), settings: Sett
     raise HTTPException(status_code=404, detail="Knowledge base document not found")
 
 
+@router.get("/chat/sessions", response_model=ChatSessionListResponse)
+def chat_sessions(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> ChatSessionListResponse:
+    total = db.scalar(select(func.count(ChatSession.id))) or 0
+    sessions = (
+        db.query(ChatSession)
+        .order_by(ChatSession.updated_at.desc(), ChatSession.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    items: list[ChatSessionSummary] = []
+    for session in sessions:
+        messages_count = db.query(func.count(ChatMessage.id)).filter(ChatMessage.session_id == session.id).scalar() or 0
+        latest_message = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session.id)
+            .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+            .first()
+        )
+        items.append(
+            ChatSessionSummary(
+                id=session.id,
+                title=session.title,
+                created_at=session.created_at,
+                updated_at=session.updated_at,
+                messages_count=messages_count,
+                preview=_preview_text(latest_message.content if latest_message else ""),
+            )
+        )
+    return ChatSessionListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/chat/session/{session_id}", response_model=ChatSessionDetailResponse)
+def chat_session_detail(session_id: int, db: Session = Depends(get_db)) -> ChatSessionDetailResponse:
+    session = _session_or_404(db, session_id)
+    log_event(db, "chat_session_opened", {"session_id": session.id})
+    messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == session.id)
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+        .all()
+    )
+    return ChatSessionDetailResponse(
+        id=session.id,
+        title=session.title,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+        messages=[
+            ChatMessageResponse(id=item.id, role=item.role, content=item.content, created_at=item.created_at)
+            for item in messages
+        ],
+    )
+
+
+@router.post("/chat/session", response_model=ChatSessionResponse)
+def create_chat_session(payload: ChatSessionCreateRequest, db: Session = Depends(get_db)) -> ChatSessionResponse:
+    session = ChatSession(title=_normalize_session_title(payload.title))
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    log_event(db, "chat_session_created", {"session_id": session.id, "title": session.title})
+    return _session_response(session)
+
+
+@router.patch("/chat/session/{session_id}", response_model=ChatSessionResponse)
+def update_chat_session(session_id: int, payload: ChatSessionUpdateRequest, db: Session = Depends(get_db)) -> ChatSessionResponse:
+    session = _session_or_404(db, session_id)
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Session title must not be empty")
+    session.title = title[:MAX_SESSION_TITLE_LENGTH]
+    session.updated_at = utcnow()
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    log_event(db, "chat_session_renamed", {"session_id": session.id, "title": session.title})
+    return _session_response(session)
+
+
+@router.delete("/chat/session/{session_id}", response_model=ChatSessionDeleteResponse)
+def delete_chat_session(session_id: int, db: Session = Depends(get_db)) -> ChatSessionDeleteResponse:
+    session = _session_or_404(db, session_id)
+    db.query(ChatMessage).filter(ChatMessage.session_id == session.id).delete(synchronize_session=False)
+    db.delete(session)
+    db.commit()
+    log_event(db, "chat_session_deleted", {"session_id": session_id})
+    return ChatSessionDeleteResponse(status="deleted", id=session_id)
+
+
 @router.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> ChatResponse:
     session = db.get(ChatSession, payload.session_id) if payload.session_id else None
     if payload.session_id and session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
     if session is None:
-        title = payload.message.strip().replace("\n", " ")[:80] or "New chat"
+        title = _normalize_session_title(payload.message.strip().replace("\n", " "), default=DEFAULT_SESSION_TITLE)
         session = ChatSession(title=title)
         db.add(session)
         db.commit()
         db.refresh(session)
+        log_event(db, "chat_session_created", {"session_id": session.id, "title": session.title})
 
     session.updated_at = utcnow()
     user_message = ChatMessage(session_id=session.id, role="user", content=payload.message)

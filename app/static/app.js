@@ -1,4 +1,5 @@
 let sessionId = null;
+let currentSessionTitle = "";
 
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message-input");
@@ -10,6 +11,11 @@ const documentsCount = document.querySelector("#documents-count");
 const knowledgeBaseDir = document.querySelector("#knowledge-base-dir");
 const domainsList = document.querySelector("#domains-list");
 const typesList = document.querySelector("#types-list");
+const sessionsList = document.querySelector("#sessions-list");
+const newSessionButton = document.querySelector("#new-session-button");
+const currentSessionTitleNode = document.querySelector("#current-session-title");
+const renameSessionButton = document.querySelector("#rename-session-button");
+const deleteSessionButton = document.querySelector("#delete-session-button");
 const kbSearchInput = document.querySelector("#kb-search-input");
 const kbDomainFilter = document.querySelector("#kb-domain-filter");
 const kbTypeFilter = document.querySelector("#kb-type-filter");
@@ -37,6 +43,155 @@ function appendMessage(role, text) {
     div.append(strong, body);
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
+}
+
+function showWelcomeMessage() {
+    messages.replaceChildren();
+    appendMessage("assistant", "Привет! Опиши проблему. Я поищу по локальной Markdown-базе и предложу безопасный старт диагностики.");
+}
+
+function setCurrentSession(id, title) {
+    sessionId = id;
+    currentSessionTitle = title || "";
+    currentSessionTitleNode.textContent = id ? `Current investigation: ${currentSessionTitle}` : "No investigation selected";
+    if (renameSessionButton) renameSessionButton.disabled = !id;
+    if (deleteSessionButton) deleteSessionButton.disabled = !id;
+}
+
+function renderMessages(history) {
+    messages.replaceChildren();
+    if (!history.length) {
+        appendMessage("assistant", "Новая investigation создана. Опиши проблему, чтобы начать диагностику.");
+        return;
+    }
+    for (const item of history) {
+        appendMessage(item.role, item.content);
+    }
+}
+
+function formatSessionDate(value) {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString();
+}
+
+function renderSessions(items) {
+    sessionsList.replaceChildren();
+    sessionsList.classList.remove("empty");
+    if (!items.length) {
+        sessionsList.classList.add("empty");
+        sessionsList.textContent = "Истории пока нет.";
+        return;
+    }
+
+    for (const item of items) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "session-item";
+        button.classList.toggle("active", item.id === sessionId);
+        button.addEventListener("click", () => openSession(item.id));
+
+        const title = document.createElement("span");
+        title.className = "session-title";
+        title.textContent = item.title;
+
+        const meta = document.createElement("span");
+        meta.className = "session-meta";
+        meta.textContent = `updated: ${formatSessionDate(item.updated_at)} · ${item.messages_count} messages`;
+
+        const preview = document.createElement("span");
+        preview.className = "session-meta session-preview";
+        preview.textContent = item.preview || "No messages yet.";
+
+        button.append(title, meta, preview);
+        sessionsList.appendChild(button);
+    }
+}
+
+async function loadSessions(options = {}) {
+    const {openNewest = false} = options;
+    const response = await fetch("/api/chat/sessions?limit=50&offset=0");
+    if (!response.ok) throw new Error(`Sessions failed: ${response.status}`);
+    const data = await response.json();
+    renderSessions(data.items || []);
+    if (openNewest && data.items?.length) {
+        await openSession(data.items[0].id);
+    }
+    return data;
+}
+
+async function createNewSession() {
+    if (newSessionButton) newSessionButton.disabled = true;
+    try {
+        const response = await fetch("/api/chat/session", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({title: "New investigation"}),
+        });
+        if (!response.ok) throw new Error(`Create failed: ${response.status}`);
+        const data = await response.json();
+        setCurrentSession(data.id, data.title);
+        renderMessages([]);
+        await loadSessions();
+        input?.focus();
+    } catch (error) {
+        appendMessage("error", `Не удалось создать investigation: ${error.message}`);
+    } finally {
+        if (newSessionButton) newSessionButton.disabled = false;
+    }
+}
+
+async function openSession(id) {
+    const response = await fetch(`/api/chat/session/${id}`);
+    if (!response.ok) throw new Error(`Session failed: ${response.status}`);
+    const data = await response.json();
+    setCurrentSession(data.id, data.title);
+    renderMessages(data.messages || []);
+    await loadSessions();
+    input?.focus();
+}
+
+async function renameCurrentSession() {
+    if (!sessionId) return;
+    const newTitle = prompt("New investigation title", currentSessionTitle);
+    if (newTitle === null) return;
+    const title = newTitle.trim();
+    if (!title) {
+        alert("Investigation title must not be empty.");
+        return;
+    }
+    try {
+        const response = await fetch(`/api/chat/session/${sessionId}`, {
+            method: "PATCH",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({title}),
+        });
+        if (!response.ok) throw new Error(`Rename failed: ${response.status}`);
+        const data = await response.json();
+        setCurrentSession(data.id, data.title);
+        await loadSessions();
+    } catch (error) {
+        appendMessage("error", `Не удалось переименовать investigation: ${error.message}`);
+    }
+}
+
+async function deleteCurrentSession() {
+    if (!sessionId) return;
+    if (!confirm("Delete this investigation?")) return;
+    const deletedId = sessionId;
+    try {
+        const response = await fetch(`/api/chat/session/${deletedId}`, {method: "DELETE"});
+        if (!response.ok) throw new Error(`Delete failed: ${response.status}`);
+        setCurrentSession(null, "");
+        showWelcomeMessage();
+        const data = await loadSessions();
+        if (data.items?.length) {
+            await openSession(data.items[0].id);
+        }
+    } catch (error) {
+        appendMessage("error", `Не удалось удалить investigation: ${error.message}`);
+    }
 }
 
 function replaceOptions(select, items, allText) {
@@ -140,8 +295,8 @@ function sourceArticle(source, clickable = false) {
     item.appendChild(snippet);
 
     if (clickable) {
-        item.tabIndex = 0;
         item.classList.add("clickable");
+        item.tabIndex = 0;
         item.addEventListener("click", () => openKbDocument(source.path));
         item.addEventListener("keydown", (event) => {
             if (event.key === "Enter" || event.key === " ") {
@@ -234,6 +389,10 @@ for (const tab of tabs) {
     tab.addEventListener("click", () => activatePanel(tab.dataset.panel));
 }
 
+newSessionButton?.addEventListener("click", createNewSession);
+renameSessionButton?.addEventListener("click", renameCurrentSession);
+deleteSessionButton?.addEventListener("click", deleteCurrentSession);
+
 kbSearchButton?.addEventListener("click", searchKbDocuments);
 for (const searchField of [kbSearchInput, kbTagFilter]) {
     searchField?.addEventListener("keydown", (event) => {
@@ -297,10 +456,17 @@ form?.addEventListener("submit", async (event) => {
         appendMessage("assistant", data.answer);
         renderSources(data.sources || []);
         activatePanel("sources-panel");
+        const sessionsData = await loadSessions();
+        const current = sessionsData.items?.find((item) => item.id === sessionId);
+        if (current) setCurrentSession(current.id, current.title);
     } catch (error) {
         appendMessage("error", `Не удалось получить ответ: ${error.message}`);
     } finally {
         button.disabled = false;
         input.focus();
     }
+});
+
+loadSessions({openNewest: true}).catch((error) => {
+    sessionsList.textContent = `Не удалось загрузить историю: ${error.message}`;
 });

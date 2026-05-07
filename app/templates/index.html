@@ -15,6 +15,12 @@
         <button id="reload-kb" class="secondary" type="button">Reload KB</button>
         <p id="reload-status" class="muted small" aria-live="polite">Кэш KB обновляется автоматически при изменении Markdown-файлов.</p>
 
+        <section class="sessions-panel">
+            <button id="new-session-button" class="secondary" type="button">+ New investigation</button>
+            <h2>Investigations</h2>
+            <div id="sessions-list" class="sessions-list empty">Истории пока нет.</div>
+            <p class="muted small">История хранится локально в SQLite. Не сохраняй секреты, токены и приватные ключи в сообщениях.</p>
+        </section>
 
         <section class="kb-controls">
             <h2>KB Browser</h2>
@@ -91,7 +97,12 @@
         <div class="chat-header">
             <div>
                 <h2>Chat</h2>
-                <p class="muted">Спроси про симптом, ошибку или runbook из локальной базы.</p>
+                <p id="current-session-title" class="muted">No investigation selected</p>
+                <p class="muted small">Спроси про симптом, ошибку или runbook из локальной базы.</p>
+                <div class="chat-actions">
+                    <button id="rename-session-button" class="compact" type="button" disabled>Rename</button>
+                    <button id="delete-session-button" class="compact danger" type="button" disabled>Delete</button>
+                </div>
             </div>
             <span class="badge">local-only</span>
         </div>
