@@ -8,6 +8,8 @@ from app.actions.models import ActionRequest
 from app.actions.policy import InvalidActionParamsError, UnknownActionError, propose_action
 from app.audit.logger import log_event
 from app.db import get_db
+from app.execution.models import ExecutionReadiness
+from app.execution.resolver import resolve_action_run_readiness
 from app.models import ACTION_RUN_STATUSES, ActionRun, ChatSession, Host, utcnow
 from app.schemas import (
     ActionRunApproveRequest,
@@ -16,6 +18,9 @@ from app.schemas import (
     ActionRunPrepareRequest,
     ActionRunRejectRequest,
     ActionRunResponse,
+    ExecutionReadinessResponse,
+    ResolvedHostResponse,
+    ResolvedSshProfileResponse,
 )
 
 router = APIRouter(prefix="/action-runs", tags=["action-runs"])
@@ -87,6 +92,44 @@ def _run_response(run: ActionRun, warnings: list[str] | None = None) -> ActionRu
         expired_by=run.expired_by,
         expires_at=run.expires_at,
         created_at=run.created_at,
+    )
+
+
+def _readiness_response(readiness: ExecutionReadiness) -> ExecutionReadinessResponse:
+    host = None
+    if readiness.host is not None:
+        host = ResolvedHostResponse(
+            id=readiness.host.id,
+            name=readiness.host.name,
+            hostname=readiness.host.hostname,
+            port=readiness.host.port,
+            os_family=readiness.host.os_family,
+            enabled=readiness.host.enabled,
+            tags=list(readiness.host.tags),
+            ssh_profile_id=readiness.host.ssh_profile_id,
+        )
+    ssh_profile = None
+    if readiness.ssh_profile is not None:
+        ssh_profile = ResolvedSshProfileResponse(
+            id=readiness.ssh_profile.id,
+            name=readiness.ssh_profile.name,
+            username=readiness.ssh_profile.username,
+            auth_type=readiness.ssh_profile.auth_type,
+            key_ref=readiness.ssh_profile.key_ref,
+            password_ref=readiness.ssh_profile.password_ref,
+            sudo_mode=readiness.ssh_profile.sudo_mode,
+        )
+    return ExecutionReadinessResponse(
+        ready=readiness.ready,
+        run_id=readiness.run_id,
+        status=readiness.status,
+        action=readiness.action,
+        command_preview=readiness.command_preview,
+        execution_enabled=False,
+        host=host,
+        ssh_profile=ssh_profile,
+        blockers=list(readiness.blockers),
+        warnings=list(readiness.warnings),
     )
 
 
@@ -265,6 +308,37 @@ def list_action_runs(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/{run_id}/readiness", response_model=ExecutionReadinessResponse)
+def get_action_run_readiness(run_id: int, db: Session = Depends(get_db)) -> ExecutionReadinessResponse:
+    try:
+        readiness = resolve_action_run_readiness(db, run_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Action run not found") from exc
+
+    run = db.get(ActionRun, readiness.run_id)
+    host_id = run.host_id if run else None
+    ssh_profile_id = None
+    if readiness.ssh_profile is not None:
+        ssh_profile_id = readiness.ssh_profile.id
+    elif readiness.host is not None:
+        ssh_profile_id = readiness.host.ssh_profile_id
+
+    log_event(
+        db,
+        "action_run_readiness_checked",
+        {
+            "run_id": readiness.run_id,
+            "ready": readiness.ready,
+            "status": readiness.status,
+            "host_id": host_id,
+            "ssh_profile_id": ssh_profile_id,
+            "blockers_count": len(readiness.blockers),
+            "execution_enabled": False,
+        },
+    )
+    return _readiness_response(readiness)
 
 
 @router.get("/{run_id}", response_model=ActionRunResponse)
