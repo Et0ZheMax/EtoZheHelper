@@ -151,6 +151,39 @@ class ActionProposalResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ActionRunPrepareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: int | None = None
+    host_id: int | None = None
+    action: str = Field(min_length=1, max_length=100)
+    params: dict[str, object] = Field(default_factory=dict)
+
+
+class ActionRunResponse(BaseModel):
+    id: int
+    session_id: int | None = None
+    host_id: int | None = None
+    action: str
+    category: str
+    risk: str
+    read_only: bool
+    requires_approval: bool
+    execution_enabled: bool
+    status: str
+    command_preview: str
+    params: dict[str, object] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+
+class ActionRunListResponse(BaseModel):
+    items: list[ActionRunResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 class ChatResponse(BaseModel):
     session_id: int
     answer: str

@@ -39,11 +39,37 @@ def _ensure_sqlite_chat_session_host_id() -> None:
         connection.execute(text("ALTER TABLE chat_sessions ADD COLUMN host_id INTEGER"))
 
 
+def _ensure_sqlite_action_runs_columns() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+    inspector = inspect(engine)
+    if "action_runs" not in inspector.get_table_names():
+        return
+    column_names = {column["name"] for column in inspector.get_columns("action_runs")}
+    migrations = {
+        "session_id": "ALTER TABLE action_runs ADD COLUMN session_id INTEGER",
+        "host_id": "ALTER TABLE action_runs ADD COLUMN host_id INTEGER",
+        "action": "ALTER TABLE action_runs ADD COLUMN action VARCHAR(100) DEFAULT '' NOT NULL",
+        "category": "ALTER TABLE action_runs ADD COLUMN category VARCHAR(100) DEFAULT '' NOT NULL",
+        "risk": "ALTER TABLE action_runs ADD COLUMN risk VARCHAR(32) DEFAULT 'low' NOT NULL",
+        "command_preview": "ALTER TABLE action_runs ADD COLUMN command_preview TEXT DEFAULT '' NOT NULL",
+        "params_json": "ALTER TABLE action_runs ADD COLUMN params_json TEXT DEFAULT '{}' NOT NULL",
+        "status": "ALTER TABLE action_runs ADD COLUMN status VARCHAR(32) DEFAULT 'prepared' NOT NULL",
+        "execution_enabled": "ALTER TABLE action_runs ADD COLUMN execution_enabled BOOLEAN DEFAULT 0 NOT NULL",
+        "created_at": "ALTER TABLE action_runs ADD COLUMN created_at DATETIME",
+    }
+    with engine.begin() as connection:
+        for column_name, statement in migrations.items():
+            if column_name not in column_names:
+                connection.execute(text(statement))
+
+
 def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_chat_session_host_id()
+    _ensure_sqlite_action_runs_columns()
 
 
 def get_db() -> Generator[Session, None, None]:
