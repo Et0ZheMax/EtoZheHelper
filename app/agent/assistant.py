@@ -1,9 +1,22 @@
+from app.actions.models import ActionProposal
+from app.actions.policy import propose_action
 from app.agent.analyzer import analyze_output, looks_like_diagnostic_output
 from app.agent.findings import AnalysisResult
 from app.agent.plans import DiagnosticPlan, get_plan
 from app.agent.topics import detect_topic
 from app.kb.models import KnowledgeDocument, SearchResult
 from app.kb.search import search_documents
+
+
+TOPIC_ACTIONS: dict[str, tuple[str, ...]] = {
+    "dns": ("resolved_status",),
+    "disk_space": ("disk_usage", "inode_usage"),
+    "performance": ("uptime_load", "memory_snapshot"),
+    "systemd": ("failed_units", "list_listening_ports"),
+    "docker": ("docker_ps_all", "docker_system_df"),
+    "cups_printers": ("cups_status", "lpstat_all"),
+    "generic": ("host_identity", "uptime_load", "disk_usage", "memory_snapshot", "failed_units"),
+}
 
 
 class DeterministicAssistant:
@@ -26,6 +39,14 @@ class DeterministicAssistant:
             return self._format_no_findings_answer(topic.key, plan, sources), sources
 
         return self._format_answer(topic.key, plan, sources), sources
+
+    def suggest_actions(self, message: str) -> list[ActionProposal]:
+        """Return read-only structured action previews that require no user parameters."""
+        topic = detect_topic(message)
+        proposals: list[ActionProposal] = []
+        for action_key in TOPIC_ACTIONS.get(topic.key, TOPIC_ACTIONS["generic"]):
+            proposals.append(propose_action(action_key, {}))
+        return proposals
 
     def _format_answer(self, topic_key: str, plan: DiagnosticPlan, sources: list[SearchResult]) -> str:
         lines: list[str] = [f"Похоже, это тема: `{topic_key}`.", ""]
