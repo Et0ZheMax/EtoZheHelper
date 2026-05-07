@@ -73,6 +73,31 @@ Validation is allowlist-only: unknown action keys are rejected; unknown paramete
 
 There is intentionally no execute endpoint in Stage 10. Chat responses may include parameter-free suggested action cards such as `resolved_status`, `disk_usage`, `inode_usage`, `failed_units`, `docker_ps_all`, `docker_system_df`, `cups_status`, and `lpstat_all`; the UI renders them as plain text and does not show an execute button.
 
+## Prepared Action Runs
+
+Stage 11 adds Prepared Action Runs: an auditable dry-run layer between action proposals and any future executor. A prepared run is created from `session_id`, `host_id`, an allowlisted `action`, and validated `params`. The server validates the optional chat session, validates that the optional host exists and is enabled, passes the action and params through the existing Action Policy Engine, then saves only the resulting command preview.
+
+`Prepare run` in the UI means **validate and save a preview**. It does not run the command. Prepared runs always have `status: "prepared"` and `execution_enabled: false`. The command preview is generated only by `propose_action()` from allowlisted catalog templates; arbitrary client-provided command strings are rejected by the request schema.
+
+The API allows `host_id:null` for generic/local-preview prepared runs. The UI currently requires a selected host for clarity and to avoid accidental ambiguity. In both cases, no SSH connection or command execution occurs.
+
+Prepare an action run:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/action-runs/prepare \
+  -H "Content-Type: application/json" \
+  -d '{"session_id":1,"host_id":1,"action":"systemd_status","params":{"service":"nginx"}}'
+```
+
+List prepared runs and fetch one run:
+
+```bash
+curl http://127.0.0.1:8000/api/action-runs
+curl http://127.0.0.1:8000/api/action-runs/1
+```
+
+Every prepared run writes an `action_run_prepared` audit event with run id, session id, host id, action, category, risk, and `execution_enabled:false`. Real SSH execution remains future work: Stage 11 still does not connect over SSH, does not invoke subprocess/shell, does not perform reachability checks, does not read private key files, and does not store secrets.
+
 ## Diagnostic output analysis
 
 MVP умеет детерминированно анализировать вставленный пользователем обезличенный вывод команд: DNS/systemd/curl/TLS/disk/performance/SSH/Docker. Приложение не выполняет эти команды само, не подключается к хостам, не вызывает внешние LLM/API и использует только локальные правила анализа.

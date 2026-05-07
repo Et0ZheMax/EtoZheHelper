@@ -20,6 +20,7 @@ const currentSessionTitleNode = document.querySelector("#current-session-title")
 const renameSessionButton = document.querySelector("#rename-session-button");
 const deleteSessionButton = document.querySelector("#delete-session-button");
 const currentHostTitleNode = document.querySelector("#current-host-title");
+const preparedRunsStatus = document.querySelector("#prepared-runs-status");
 const newHostButton = document.querySelector("#new-host-button");
 const hostsList = document.querySelector("#hosts-list");
 const hostsStatus = document.querySelector("#hosts-status");
@@ -84,16 +85,79 @@ function renderActionCards(actions) {
 
         const disabled = document.createElement("div");
         disabled.className = "execution-disabled";
-        disabled.textContent = "Execution disabled in this stage";
+        disabled.textContent = "Execution disabled";
 
-        card.append(heading, label, previewLabel, preview);
-        if (selectedHostName) {
-            const hostContext = document.createElement("div");
-            hostContext.className = "target-host-context";
-            hostContext.textContent = `Target host context: ${selectedHostName}`;
-            card.appendChild(hostContext);
-        }
-        card.appendChild(disabled);
+        const prepareButton = document.createElement("button");
+        prepareButton.type = "button";
+        prepareButton.className = "compact prepare-run-button";
+        prepareButton.textContent = "Prepare run";
+        prepareButton.disabled = !selectedHostId;
+
+        const prepareHelper = document.createElement("div");
+        prepareHelper.className = "muted small prepare-helper";
+        prepareHelper.textContent = selectedHostName
+            ? `Prepare an auditable dry-run for ${selectedHostName}. No SSH will be performed.`
+            : "Select a host to prepare an auditable dry-run. No SSH will be performed.";
+
+        const result = document.createElement("div");
+        result.className = "prepared-run-result";
+        result.hidden = true;
+
+        prepareButton.addEventListener("click", async () => {
+            if (!selectedHostId) return;
+            prepareButton.disabled = true;
+            prepareButton.textContent = "Preparing…";
+            result.hidden = false;
+            result.textContent = "Preparing dry-run…";
+            try {
+                const response = await fetch("/api/action-runs/prepare", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        host_id: selectedHostId,
+                        action: action.action,
+                        params: action.params || {},
+                    }),
+                });
+                if (!response.ok) {
+                    let details = `Prepare failed: ${response.status}`;
+                    try {
+                        const payload = await response.json();
+                        if (payload.detail) details = Array.isArray(payload.detail) ? JSON.stringify(payload.detail) : payload.detail;
+                    } catch (_) {
+                        // Keep generic HTTP status when the response is not JSON.
+                    }
+                    throw new Error(details);
+                }
+                const run = await response.json();
+                result.replaceChildren();
+                const title = document.createElement("strong");
+                title.textContent = `Prepared run #${run.id}`;
+                const command = document.createElement("code");
+                command.textContent = run.command_preview || "";
+                const execution = document.createElement("div");
+                execution.className = "execution-disabled";
+                execution.textContent = "Execution disabled";
+                result.append(title, command, execution);
+                if (preparedRunsStatus) {
+                    preparedRunsStatus.textContent = `Prepared runs: latest #${run.id} saved. No command was executed.`;
+                }
+            } catch (error) {
+                result.textContent = `Could not prepare run: ${error.message}`;
+                if (preparedRunsStatus) preparedRunsStatus.textContent = `Prepared run failed: ${error.message}`;
+            } finally {
+                prepareButton.disabled = !selectedHostId;
+                prepareButton.textContent = "Prepare run";
+            }
+        });
+
+        const hostContext = document.createElement("div");
+        hostContext.className = "target-host-context";
+        hostContext.textContent = selectedHostName ? `Target host context: ${selectedHostName}` : "Target host context: none";
+
+        card.append(heading, label, previewLabel, preview, hostContext);
+        card.append(disabled, prepareButton, prepareHelper, result);
         wrapper.appendChild(card);
     }
     return wrapper;
@@ -131,6 +195,21 @@ function formatSessionDate(value) {
 }
 
 
+
+function updateActionPrepareControls() {
+    for (const button of document.querySelectorAll(".prepare-run-button")) {
+        button.disabled = !selectedHostId;
+    }
+    for (const helper of document.querySelectorAll(".prepare-helper")) {
+        helper.textContent = selectedHostName
+            ? `Prepare an auditable dry-run for ${selectedHostName}. No SSH will be performed.`
+            : "Select a host to prepare an auditable dry-run. No SSH will be performed.";
+    }
+    for (const item of document.querySelectorAll(".target-host-context")) {
+        item.textContent = selectedHostName ? `Target host context: ${selectedHostName}` : "Target host context: none";
+    }
+}
+
 function setSelectedHost(host) {
     selectedHostId = host?.id || null;
     selectedHostName = host?.name || "";
@@ -142,6 +221,7 @@ function setSelectedHost(host) {
             item.classList.toggle("active", Number(item.dataset.hostId) === selectedHostId);
         }
     }
+    updateActionPrepareControls();
 }
 
 async function persistSessionHost(hostId) {

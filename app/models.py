@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db import Base
 
@@ -67,6 +67,33 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     session: Mapped[ChatSession] = relationship(back_populates="messages")
+
+
+class ActionRun(Base):
+    __tablename__ = "action_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    session_id: Mapped[int | None] = mapped_column(ForeignKey("chat_sessions.id"), nullable=True, index=True)
+    host_id: Mapped[int | None] = mapped_column(ForeignKey("hosts.id"), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(100), index=True)
+    category: Mapped[str] = mapped_column(String(100), index=True)
+    risk: Mapped[str] = mapped_column(String(32), default="low")
+    command_preview: Mapped[str] = mapped_column(Text)
+    params_json: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(32), default="prepared", index=True)
+    execution_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    session: Mapped[ChatSession | None] = relationship()
+    host: Mapped[Host | None] = relationship()
+
+    @validates("status")
+    def validate_status(self, key: str, value: str) -> str:
+        return "prepared"
+
+    @validates("execution_enabled")
+    def validate_execution_enabled(self, key: str, value: bool) -> bool:
+        return False
 
 
 class AuditEvent(Base):

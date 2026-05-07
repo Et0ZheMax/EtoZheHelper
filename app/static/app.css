@@ -427,3 +427,20 @@ button.compact.danger:hover { background: #fee2e2; }
 .target-host-context {
     font-weight: 700;
 }
+.prepare-run-button {
+    width: fit-content;
+}
+.prepare-helper {
+    line-height: 1.35;
+}
+.prepared-run-result {
+    display: grid;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #f8fafc;
+}
+.prepared-run-result[hidden] {
+    display: none;
+}
