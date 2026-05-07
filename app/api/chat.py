@@ -10,6 +10,7 @@ from app.kb.search import search_documents
 from app.kb.service import knowledge_base_service
 from app.models import ChatMessage, ChatSession, utcnow
 from app.schemas import (
+    ActionProposalResponse,
     ChatMessageResponse,
     ChatRequest,
     ChatResponse,
@@ -298,16 +299,33 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db), settings: Settings
     snapshot = knowledge_base_service.get_knowledge_base(settings.knowledge_base_dir)
     assistant = DeterministicAssistant(documents=snapshot.documents, max_results=settings.max_search_results)
     answer, results = assistant.answer(payload.message)
+    action_proposals = assistant.suggest_actions(payload.message)
     log_event(db, "kb_search_executed", {"session_id": session.id, "query_length": len(payload.message), "results_count": len(results)})
 
     session.updated_at = utcnow()
     assistant_message = ChatMessage(session_id=session.id, role="assistant", content=answer)
     db.add(assistant_message)
     db.commit()
-    log_event(db, "assistant_answer_generated", {"session_id": session.id, "answer_length": len(answer)})
+    log_event(db, "assistant_answer_generated", {"session_id": session.id, "answer_length": len(answer), "actions_count": len(action_proposals)})
 
     return ChatResponse(
         session_id=session.id,
         answer=answer,
         sources=[Source(title=result.title, path=result.path, score=result.score, snippet=result.snippet, metadata=result.metadata) for result in results],
+        actions=[
+            ActionProposalResponse(
+                action=proposal.action,
+                label=proposal.label,
+                category=proposal.category,
+                risk=proposal.risk,
+                read_only=proposal.read_only,
+                requires_approval=proposal.requires_approval,
+                needs_sudo=proposal.needs_sudo,
+                execution_enabled=proposal.execution_enabled,
+                command_preview=proposal.command_preview,
+                params=proposal.params,
+                warnings=proposal.warnings,
+            )
+            for proposal in action_proposals
+        ],
     )

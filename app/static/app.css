@@ -339,3 +339,45 @@ button.compact.danger {
     color: #991b1b;
 }
 button.compact.danger:hover { background: #fee2e2; }
+.action-cards {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    white-space: normal;
+}
+.action-cards h3 {
+    margin: 0;
+    font-size: 15px;
+}
+.action-card {
+    display: grid;
+    gap: 7px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #ffffff;
+}
+.action-card-heading {
+    color: var(--safe-text);
+    font-size: 12px;
+    font-weight: 800;
+}
+.action-label {
+    font-weight: 700;
+}
+.action-card code {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.execution-disabled {
+    width: fit-content;
+    padding: 4px 7px;
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    font-size: 12px;
+    font-weight: 800;
+}

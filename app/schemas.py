@@ -35,10 +35,47 @@ class Source(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
 
+class ActionDefinitionResponse(BaseModel):
+    key: str
+    label: str
+    description: str
+    category: str
+    risk: str
+    read_only: bool
+    requires_approval: bool
+    needs_sudo: bool
+    params_schema: dict[str, dict[str, object]] = Field(default_factory=dict)
+
+
+class ActionCatalogResponse(BaseModel):
+    items: list[ActionDefinitionResponse]
+
+
+class ActionProposalRequest(BaseModel):
+    action: str = Field(min_length=1, max_length=100)
+    params: dict[str, object] = Field(default_factory=dict)
+    session_id: int | None = None
+
+
+class ActionProposalResponse(BaseModel):
+    action: str
+    label: str
+    category: str
+    risk: str
+    read_only: bool
+    requires_approval: bool
+    needs_sudo: bool
+    execution_enabled: bool
+    command_preview: str
+    params: dict[str, object] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     session_id: int
     answer: str
     sources: list[Source]
+    actions: list[ActionProposalResponse] = Field(default_factory=list)
 
 
 class KbDocumentSummary(BaseModel):

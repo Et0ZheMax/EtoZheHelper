@@ -32,7 +32,7 @@ const kbDocumentContent = document.querySelector("#kb-document-content");
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".panel-section");
 
-function appendMessage(role, text) {
+function appendMessage(role, text, actions = []) {
     const div = document.createElement("div");
     div.className = `message ${role}`;
     const strong = document.createElement("strong");
@@ -41,8 +41,48 @@ function appendMessage(role, text) {
     body.className = "message-body";
     body.textContent = text;
     div.append(strong, body);
+    if (role === "assistant" && actions.length) {
+        div.appendChild(renderActionCards(actions));
+    }
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
+}
+
+function renderActionCards(actions) {
+    const wrapper = document.createElement("section");
+    wrapper.className = "action-cards";
+
+    const title = document.createElement("h3");
+    title.textContent = "Suggested safe actions";
+    wrapper.appendChild(title);
+
+    for (const action of actions) {
+        const card = document.createElement("article");
+        card.className = "action-card";
+
+        const heading = document.createElement("div");
+        heading.className = "action-card-heading";
+        heading.textContent = `[${action.action}] risk: ${action.risk} read-only: ${action.read_only}`;
+
+        const label = document.createElement("div");
+        label.className = "action-label";
+        label.textContent = action.label || action.action;
+
+        const previewLabel = document.createElement("span");
+        previewLabel.className = "muted small";
+        previewLabel.textContent = "command preview:";
+
+        const preview = document.createElement("code");
+        preview.textContent = action.command_preview || "";
+
+        const disabled = document.createElement("div");
+        disabled.className = "execution-disabled";
+        disabled.textContent = "Execution disabled in this stage";
+
+        card.append(heading, label, previewLabel, preview, disabled);
+        wrapper.appendChild(card);
+    }
+    return wrapper;
 }
 
 function showWelcomeMessage() {
@@ -453,7 +493,7 @@ form?.addEventListener("submit", async (event) => {
         }
         const data = await response.json();
         sessionId = data.session_id;
-        appendMessage("assistant", data.answer);
+        appendMessage("assistant", data.answer, data.actions || []);
         renderSources(data.sources || []);
         activatePanel("sources-panel");
         const sessionsData = await loadSessions();
