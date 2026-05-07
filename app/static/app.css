@@ -444,3 +444,13 @@ button.compact.danger:hover { background: #fee2e2; }
 .prepared-run-result[hidden] {
     display: none;
 }
+.approval-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.decision-note {
+    color: var(--text);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}

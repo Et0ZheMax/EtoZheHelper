@@ -98,6 +98,40 @@ curl http://127.0.0.1:8000/api/action-runs/1
 
 Every prepared run writes an `action_run_prepared` audit event with run id, session id, host id, action, category, risk, and `execution_enabled:false`. Real SSH execution remains future work: Stage 11 still does not connect over SSH, does not invoke subprocess/shell, does not perform reachability checks, does not read private key files, and does not store secrets.
 
+## Approval Queue
+
+Stage 12 adds approval metadata for prepared action runs. Operators can approve, reject, or expire a prepared run. Approval does not execute anything and `execution_enabled` remains false. Real SSH execution remains future work.
+
+Allowed approval queue statuses are `prepared`, `approved`, `rejected`, and `expired`. A run can be approved only from `prepared`; rejected from `prepared` or `approved`; and expired from `prepared` or `approved`. Once a run is `rejected` or `expired`, it cannot be approved again.
+
+Approval, rejection, and expiration notes are stored separately: `approval_note` for approve, `rejection_note` for reject, and `expiration_note` for expire. If an approved run is later rejected or expired, the original approval metadata is preserved.
+
+Approve a prepared run for possible future read-only execution:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/action-runs/1/approve \
+  -H "Content-Type: application/json" \
+  -d '{"operator":"max","note":"Approved for future read-only execution","expires_in_minutes":60}'
+```
+
+Reject a prepared or approved run:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/action-runs/1/reject \
+  -H "Content-Type: application/json" \
+  -d '{"operator":"max","note":"Wrong host"}'
+```
+
+Expire a prepared or approved run:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/action-runs/1/expire \
+  -H "Content-Type: application/json" \
+  -d '{"operator":"max","note":"Expired manually"}'
+```
+
+Stage 12 is metadata and audit only: it adds no command execution, no SSH, no executor, no credential checks, and no background task runner. Approval means only that an operator approved the stored preview for possible future execution.
+
 ## Diagnostic output analysis
 
 MVP умеет детерминированно анализировать вставленный пользователем обезличенный вывод команд: DNS/systemd/curl/TLS/disk/performance/SSH/Docker. Приложение не выполняет эти команды само, не подключается к хостам, не вызывает внешние LLM/API и использует только локальные правила анализа.

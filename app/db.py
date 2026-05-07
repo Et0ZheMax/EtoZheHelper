@@ -56,6 +56,16 @@ def _ensure_sqlite_action_runs_columns() -> None:
         "params_json": "ALTER TABLE action_runs ADD COLUMN params_json TEXT DEFAULT '{}' NOT NULL",
         "status": "ALTER TABLE action_runs ADD COLUMN status VARCHAR(32) DEFAULT 'prepared' NOT NULL",
         "execution_enabled": "ALTER TABLE action_runs ADD COLUMN execution_enabled BOOLEAN DEFAULT 0 NOT NULL",
+        "approved_at": "ALTER TABLE action_runs ADD COLUMN approved_at DATETIME",
+        "rejected_at": "ALTER TABLE action_runs ADD COLUMN rejected_at DATETIME",
+        "expired_at": "ALTER TABLE action_runs ADD COLUMN expired_at DATETIME",
+        "approval_note": "ALTER TABLE action_runs ADD COLUMN approval_note TEXT",
+        "rejection_note": "ALTER TABLE action_runs ADD COLUMN rejection_note TEXT",
+        "expiration_note": "ALTER TABLE action_runs ADD COLUMN expiration_note TEXT",
+        "approved_by": "ALTER TABLE action_runs ADD COLUMN approved_by VARCHAR(120)",
+        "rejected_by": "ALTER TABLE action_runs ADD COLUMN rejected_by VARCHAR(120)",
+        "expired_by": "ALTER TABLE action_runs ADD COLUMN expired_by VARCHAR(120)",
+        "expires_at": "ALTER TABLE action_runs ADD COLUMN expires_at DATETIME",
         "created_at": "ALTER TABLE action_runs ADD COLUMN created_at DATETIME",
     }
     with engine.begin() as connection:

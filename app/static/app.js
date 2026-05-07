@@ -40,6 +40,140 @@ const kbDocumentContent = document.querySelector("#kb-document-content");
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".panel-section");
 
+
+function getOperatorLabel() {
+    return localStorage.getItem("actionRunOperator") || "local-operator";
+}
+
+async function postActionRunDecision(runId, decision, body) {
+    const response = await fetch(`/api/action-runs/${runId}/${decision}`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+        let details = `${decision} failed: ${response.status}`;
+        try {
+            const payload = await response.json();
+            if (payload.detail) details = Array.isArray(payload.detail) ? JSON.stringify(payload.detail) : payload.detail;
+        } catch (_) {
+            // Keep generic HTTP status when the response is not JSON.
+        }
+        throw new Error(details);
+    }
+    return response.json();
+}
+
+function promptActionRunOperator() {
+    const operator = window.prompt("Operator name", getOperatorLabel());
+    if (operator === null) return null;
+    const trimmed = operator.trim();
+    if (!trimmed) {
+        window.alert("Operator name is required.");
+        return null;
+    }
+    localStorage.setItem("actionRunOperator", trimmed);
+    return trimmed;
+}
+
+function promptActionRunNote(message) {
+    const note = window.prompt(message, "");
+    if (note === null) return null;
+    const trimmed = note.trim();
+    return trimmed || null;
+}
+
+function appendDecisionNote(parent, note) {
+    if (!note) return;
+    const noteLine = document.createElement("div");
+    noteLine.className = "decision-note";
+    noteLine.textContent = `Note: ${note}`;
+    parent.append(noteLine);
+}
+
+function renderPreparedRunResult(result, run) {
+    result.replaceChildren();
+    const title = document.createElement("strong");
+    title.textContent = `Prepared run #${run.id}`;
+    const command = document.createElement("code");
+    command.textContent = run.command_preview || "";
+    const execution = document.createElement("div");
+    execution.className = "execution-disabled";
+    execution.textContent = "Execution disabled";
+
+    const controls = document.createElement("div");
+    controls.className = "approval-controls";
+
+    const approveButton = document.createElement("button");
+    approveButton.type = "button";
+    approveButton.className = "compact";
+    approveButton.textContent = "Approve";
+
+    const rejectButton = document.createElement("button");
+    rejectButton.type = "button";
+    rejectButton.className = "compact secondary";
+    rejectButton.textContent = "Reject";
+
+    approveButton.addEventListener("click", async () => {
+        const operator = promptActionRunOperator();
+        if (!operator) return;
+        const note = promptActionRunNote("Approval note (optional)");
+        if (note === null) return;
+        approveButton.disabled = true;
+        rejectButton.disabled = true;
+        try {
+            const approved = await postActionRunDecision(run.id, "approve", {operator, note});
+            result.replaceChildren();
+            const approvedTitle = document.createElement("strong");
+            approvedTitle.textContent = `Approved run #${approved.id}`;
+            const warning = document.createElement("div");
+            warning.className = "execution-disabled";
+            warning.textContent = "Approval is metadata only. No command was executed.";
+            result.append(approvedTitle);
+            appendDecisionNote(result, approved.approval_note);
+            result.append(warning);
+            if (preparedRunsStatus) {
+                preparedRunsStatus.textContent = `Prepared runs: latest #${approved.id} approved. No command was executed.`;
+            }
+        } catch (error) {
+            result.append(document.createTextNode(` Could not approve run: ${error.message}`));
+            approveButton.disabled = false;
+            rejectButton.disabled = false;
+        }
+    });
+
+    rejectButton.addEventListener("click", async () => {
+        const operator = promptActionRunOperator();
+        if (!operator) return;
+        const note = promptActionRunNote("Rejection note (optional)");
+        if (note === null) return;
+        approveButton.disabled = true;
+        rejectButton.disabled = true;
+        try {
+            const rejected = await postActionRunDecision(run.id, "reject", {operator, note});
+            result.replaceChildren();
+            const rejectedTitle = document.createElement("strong");
+            rejectedTitle.textContent = `Rejected run #${rejected.id}`;
+            const warning = document.createElement("div");
+            warning.className = "execution-disabled";
+            warning.textContent = "No command was executed.";
+            result.append(rejectedTitle);
+            appendDecisionNote(result, rejected.rejection_note);
+            result.append(warning);
+            if (preparedRunsStatus) {
+                preparedRunsStatus.textContent = `Prepared runs: latest #${rejected.id} rejected. No command was executed.`;
+            }
+        } catch (error) {
+            result.append(document.createTextNode(` Could not reject run: ${error.message}`));
+            approveButton.disabled = false;
+            rejectButton.disabled = false;
+        }
+    });
+
+    controls.append(approveButton, rejectButton);
+    result.append(title, command, execution, controls);
+}
+
 function appendMessage(role, text, actions = []) {
     const div = document.createElement("div");
     div.className = `message ${role}`;
@@ -131,17 +265,9 @@ function renderActionCards(actions) {
                     throw new Error(details);
                 }
                 const run = await response.json();
-                result.replaceChildren();
-                const title = document.createElement("strong");
-                title.textContent = `Prepared run #${run.id}`;
-                const command = document.createElement("code");
-                command.textContent = run.command_preview || "";
-                const execution = document.createElement("div");
-                execution.className = "execution-disabled";
-                execution.textContent = "Execution disabled";
-                result.append(title, command, execution);
+                renderPreparedRunResult(result, run);
                 if (preparedRunsStatus) {
-                    preparedRunsStatus.textContent = `Prepared runs: latest #${run.id} saved. No command was executed.`;
+                    preparedRunsStatus.textContent = `Prepared runs: latest #${run.id} prepared. No command was executed.`;
                 }
             } catch (error) {
                 result.textContent = `Could not prepare run: ${error.message}`;

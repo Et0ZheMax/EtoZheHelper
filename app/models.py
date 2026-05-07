@@ -69,6 +69,9 @@ class ChatMessage(Base):
     session: Mapped[ChatSession] = relationship(back_populates="messages")
 
 
+ACTION_RUN_STATUSES = {"prepared", "approved", "rejected", "expired"}
+
+
 class ActionRun(Base):
     __tablename__ = "action_runs"
 
@@ -82,6 +85,16 @@ class ActionRun(Base):
     params_json: Mapped[str] = mapped_column(Text, default="{}")
     status: Mapped[str] = mapped_column(String(32), default="prepared", index=True)
     execution_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    approved_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    expired_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    approval_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejection_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expiration_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    rejected_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    expired_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     session: Mapped[ChatSession | None] = relationship()
@@ -89,7 +102,9 @@ class ActionRun(Base):
 
     @validates("status")
     def validate_status(self, key: str, value: str) -> str:
-        return "prepared"
+        if value not in ACTION_RUN_STATUSES:
+            raise ValueError("Unsupported action run status")
+        return value
 
     @validates("execution_enabled")
     def validate_execution_enabled(self, key: str, value: bool) -> bool:
