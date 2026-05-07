@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -7,12 +8,21 @@ from app.actions.models import ActionRequest
 from app.actions.policy import InvalidActionParamsError, UnknownActionError, propose_action
 from app.audit.logger import log_event
 from app.db import get_db
-from app.models import ActionRun, ChatSession, Host
-from app.schemas import ActionRunListResponse, ActionRunPrepareRequest, ActionRunResponse
+from app.models import ACTION_RUN_STATUSES, ActionRun, ChatSession, Host, utcnow
+from app.schemas import (
+    ActionRunApproveRequest,
+    ActionRunExpireRequest,
+    ActionRunListResponse,
+    ActionRunPrepareRequest,
+    ActionRunRejectRequest,
+    ActionRunResponse,
+)
 
 router = APIRouter(prefix="/action-runs", tags=["action-runs"])
 
 STAGE_11_WARNING = "Stage 11 prepares runs only. No command was executed."
+STAGE_12_APPROVAL_WARNING = "Approval is metadata only in Stage 12. No command was executed."
+NO_EXECUTION_WARNING = "No command was executed."
 HISTORICAL_VALIDATION_WARNING = (
     "Stored run references an action or params that no longer validate against the current catalog. "
     "Showing stored preview only."
@@ -21,6 +31,9 @@ SESSION_HOST_MISMATCH_WARNING = (
     "The provided host_id differs from the chat session host context; the explicit host_id was used for this prepared run."
 )
 PREPARED_STATUS = "prepared"
+APPROVED_STATUS = "approved"
+REJECTED_STATUS = "rejected"
+EXPIRED_STATUS = "expired"
 EXECUTION_ENABLED = False
 
 
@@ -59,10 +72,20 @@ def _run_response(run: ActionRun, warnings: list[str] | None = None) -> ActionRu
         read_only=read_only,
         requires_approval=requires_approval,
         execution_enabled=False,
-        status=PREPARED_STATUS,
+        status=run.status,
         command_preview=run.command_preview,
         params=params,
         warnings=response_warnings,
+        approved_at=run.approved_at,
+        rejected_at=run.rejected_at,
+        expired_at=run.expired_at,
+        approval_note=run.approval_note,
+        rejection_note=run.rejection_note,
+        expiration_note=run.expiration_note,
+        approved_by=run.approved_by,
+        rejected_by=run.rejected_by,
+        expired_by=run.expired_by,
+        expires_at=run.expires_at,
         created_at=run.created_at,
     )
 
@@ -72,6 +95,19 @@ def _run_or_404(db: Session, run_id: int) -> ActionRun:
     if run is None:
         raise HTTPException(status_code=404, detail="Action run not found")
     return run
+
+
+def _ensure_status(run: ActionRun, allowed: set[str], action_label: str) -> None:
+    if run.status not in allowed:
+        allowed_text = ", ".join(sorted(allowed))
+        raise HTTPException(
+            status_code=409,
+            detail=f"Action run cannot be {action_label} from status '{run.status}'. Allowed from: {allowed_text}.",
+        )
+
+
+def _force_no_execution(run: ActionRun) -> None:
+    run.execution_enabled = EXECUTION_ENABLED
 
 
 @router.post("/prepare", response_model=ActionRunResponse)
@@ -133,19 +169,94 @@ def prepare_action_run(payload: ActionRunPrepareRequest, db: Session = Depends(g
     return _run_response(run, warnings=warnings)
 
 
+@router.post("/{run_id}/approve", response_model=ActionRunResponse)
+def approve_action_run(
+    run_id: int, payload: ActionRunApproveRequest, db: Session = Depends(get_db)
+) -> ActionRunResponse:
+    run = _run_or_404(db, run_id)
+    _ensure_status(run, {PREPARED_STATUS}, "approved")
+    now = utcnow()
+    run.status = APPROVED_STATUS
+    run.approved_at = now
+    run.approved_by = payload.operator
+    run.approval_note = payload.note
+    run.expires_at = now + timedelta(minutes=payload.expires_in_minutes) if payload.expires_in_minutes is not None else None
+    _force_no_execution(run)
+    db.commit()
+    db.refresh(run)
+    log_event(
+        db,
+        "action_run_approved",
+        {
+            "run_id": run.id,
+            "operator": payload.operator,
+            "expires_at": run.expires_at.isoformat() if run.expires_at else None,
+            "execution_enabled": run.execution_enabled,
+        },
+    )
+    return _run_response(run, warnings=[STAGE_12_APPROVAL_WARNING])
+
+
+@router.post("/{run_id}/reject", response_model=ActionRunResponse)
+def reject_action_run(
+    run_id: int, payload: ActionRunRejectRequest, db: Session = Depends(get_db)
+) -> ActionRunResponse:
+    run = _run_or_404(db, run_id)
+    _ensure_status(run, {PREPARED_STATUS, APPROVED_STATUS}, "rejected")
+    run.status = REJECTED_STATUS
+    run.rejected_at = utcnow()
+    run.rejected_by = payload.operator
+    run.rejection_note = payload.note
+    _force_no_execution(run)
+    db.commit()
+    db.refresh(run)
+    log_event(
+        db,
+        "action_run_rejected",
+        {"run_id": run.id, "operator": payload.operator, "execution_enabled": run.execution_enabled},
+    )
+    return _run_response(run, warnings=[NO_EXECUTION_WARNING])
+
+
+@router.post("/{run_id}/expire", response_model=ActionRunResponse)
+def expire_action_run(
+    run_id: int, payload: ActionRunExpireRequest, db: Session = Depends(get_db)
+) -> ActionRunResponse:
+    run = _run_or_404(db, run_id)
+    _ensure_status(run, {PREPARED_STATUS, APPROVED_STATUS}, "expired")
+    run.status = EXPIRED_STATUS
+    run.expired_at = utcnow()
+    run.expired_by = payload.operator
+    run.expiration_note = payload.note
+    _force_no_execution(run)
+    db.commit()
+    db.refresh(run)
+    log_event(
+        db,
+        "action_run_expired",
+        {"run_id": run.id, "operator": payload.operator, "execution_enabled": run.execution_enabled},
+    )
+    return _run_response(run, warnings=[NO_EXECUTION_WARNING])
+
+
 @router.get("", response_model=ActionRunListResponse)
 def list_action_runs(
     session_id: int | None = Query(default=None),
     host_id: int | None = Query(default=None),
+    status: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> ActionRunListResponse:
+    if status is not None and status not in ACTION_RUN_STATUSES:
+        raise HTTPException(status_code=422, detail="Unsupported action run status")
     query = db.query(ActionRun)
     if session_id is not None:
         query = query.filter(ActionRun.session_id == session_id)
     if host_id is not None:
         query = query.filter(ActionRun.host_id == host_id)
+    if status is not None:
+        query = query.filter(ActionRun.status == status)
     total = query.count()
     runs = query.order_by(ActionRun.created_at.desc(), ActionRun.id.desc()).offset(offset).limit(limit).all()
     return ActionRunListResponse(

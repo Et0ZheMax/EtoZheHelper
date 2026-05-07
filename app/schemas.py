@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,253}$")
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_.@:+ -]{1,120}$")
+SAFE_OPERATOR_RE = re.compile(r"^[A-Za-z0-9 ._@-]{1,120}$")
 SAFE_USERNAME_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,128}$")
 SAFE_TAG_RE = re.compile(r"^[A-Za-z0-9_.@:+-]{1,64}$")
 ALLOWED_AUTH_TYPES = {"key", "password", "agent", "manual"}
@@ -160,6 +161,86 @@ class ActionRunPrepareRequest(BaseModel):
     params: dict[str, object] = Field(default_factory=dict)
 
 
+def _validate_operator(value: str) -> str:
+    return _validate_safe_text(value, SAFE_OPERATOR_RE, "operator")
+
+
+def _validate_note(value: str | None) -> str | None:
+    text = _trim(value)
+    if text is None or text == "":
+        return None
+    if "<" in text or ">" in text:
+        raise ValueError("note must be plain text")
+    return text
+
+
+class ActionRunApproveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator: str = Field(min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=1000)
+    expires_in_minutes: int | None = Field(default=None, ge=1, le=1440)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_secret_fields(cls, data: Any) -> Any:
+        return _reject_secret_extra_fields(data)
+
+    @field_validator("operator")
+    @classmethod
+    def validate_operator(cls, value: str) -> str:
+        return _validate_operator(value)
+
+    @field_validator("note")
+    @classmethod
+    def validate_note(cls, value: str | None) -> str | None:
+        return _validate_note(value)
+
+
+class ActionRunRejectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator: str = Field(min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_secret_fields(cls, data: Any) -> Any:
+        return _reject_secret_extra_fields(data)
+
+    @field_validator("operator")
+    @classmethod
+    def validate_operator(cls, value: str) -> str:
+        return _validate_operator(value)
+
+    @field_validator("note")
+    @classmethod
+    def validate_note(cls, value: str | None) -> str | None:
+        return _validate_note(value)
+
+
+class ActionRunExpireRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator: str = Field(default="system", min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_secret_fields(cls, data: Any) -> Any:
+        return _reject_secret_extra_fields(data)
+
+    @field_validator("operator")
+    @classmethod
+    def validate_operator(cls, value: str) -> str:
+        return _validate_operator(value)
+
+    @field_validator("note")
+    @classmethod
+    def validate_note(cls, value: str | None) -> str | None:
+        return _validate_note(value)
+
+
 class ActionRunResponse(BaseModel):
     id: int
     session_id: int | None = None
@@ -174,6 +255,16 @@ class ActionRunResponse(BaseModel):
     command_preview: str
     params: dict[str, object] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
+    approved_at: datetime | None = None
+    rejected_at: datetime | None = None
+    expired_at: datetime | None = None
+    approval_note: str | None = None
+    rejection_note: str | None = None
+    expiration_note: str | None = None
+    approved_by: str | None = None
+    rejected_by: str | None = None
+    expired_by: str | None = None
+    expires_at: datetime | None = None
     created_at: datetime
 
 
