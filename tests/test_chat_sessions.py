@@ -122,3 +122,30 @@ def test_create_session_uses_default_title_for_empty_title():
 
     assert response.status_code == 200
     assert response.json()["title"] == "New investigation"
+
+
+def test_set_clear_session_host_context_and_unknown_host_rejected():
+    with TestClient(app) as client:
+        host_response = client.post("/api/hosts", json={"name": "session-host", "hostname": "session-host.example.local"})
+        session_response = client.post("/api/chat/session", json={"title": "Host context investigation"})
+
+        assert host_response.status_code == 200
+        assert session_response.status_code == 200
+        host_id = host_response.json()["id"]
+        session_id = session_response.json()["id"]
+
+        set_response = client.patch(f"/api/chat/session/{session_id}/host", json={"host_id": host_id})
+        detail_response = client.get(f"/api/chat/session/{session_id}")
+        clear_response = client.patch(f"/api/chat/session/{session_id}/host", json={"host_id": None})
+        cleared_detail_response = client.get(f"/api/chat/session/{session_id}")
+        unknown_response = client.patch(f"/api/chat/session/{session_id}/host", json={"host_id": 99999999})
+
+    assert set_response.status_code == 200
+    assert set_response.json()["host_id"] == host_id
+    assert detail_response.status_code == 200
+    assert detail_response.json()["host_id"] == host_id
+    assert clear_response.status_code == 200
+    assert clear_response.json()["host_id"] is None
+    assert cleared_detail_response.status_code == 200
+    assert cleared_detail_response.json()["host_id"] is None
+    assert unknown_response.status_code == 404

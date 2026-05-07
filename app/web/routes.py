@@ -12,9 +12,9 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 def index(request: Request, settings: Settings = Depends(get_settings)):
     snapshot = knowledge_base_service.get_knowledge_base(settings.knowledge_base_dir)
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "app_name": settings.app_name,
             "documents_count": snapshot.stats.documents_count,
             "knowledge_base_dir": snapshot.stats.knowledge_base_dir,

@@ -1,5 +1,8 @@
 let sessionId = null;
 let currentSessionTitle = "";
+let selectedHostId = null;
+let selectedHostName = "";
+let hostsById = new Map();
 
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message-input");
@@ -16,6 +19,10 @@ const newSessionButton = document.querySelector("#new-session-button");
 const currentSessionTitleNode = document.querySelector("#current-session-title");
 const renameSessionButton = document.querySelector("#rename-session-button");
 const deleteSessionButton = document.querySelector("#delete-session-button");
+const currentHostTitleNode = document.querySelector("#current-host-title");
+const newHostButton = document.querySelector("#new-host-button");
+const hostsList = document.querySelector("#hosts-list");
+const hostsStatus = document.querySelector("#hosts-status");
 const kbSearchInput = document.querySelector("#kb-search-input");
 const kbDomainFilter = document.querySelector("#kb-domain-filter");
 const kbTypeFilter = document.querySelector("#kb-type-filter");
@@ -32,7 +39,7 @@ const kbDocumentContent = document.querySelector("#kb-document-content");
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".panel-section");
 
-function appendMessage(role, text) {
+function appendMessage(role, text, actions = []) {
     const div = document.createElement("div");
     div.className = `message ${role}`;
     const strong = document.createElement("strong");
@@ -41,8 +48,55 @@ function appendMessage(role, text) {
     body.className = "message-body";
     body.textContent = text;
     div.append(strong, body);
+    if (role === "assistant" && actions.length) {
+        div.appendChild(renderActionCards(actions));
+    }
     messages.appendChild(div);
     messages.scrollTop = messages.scrollHeight;
+}
+
+function renderActionCards(actions) {
+    const wrapper = document.createElement("section");
+    wrapper.className = "action-cards";
+
+    const title = document.createElement("h3");
+    title.textContent = "Suggested safe actions";
+    wrapper.appendChild(title);
+
+    for (const action of actions) {
+        const card = document.createElement("article");
+        card.className = "action-card";
+
+        const heading = document.createElement("div");
+        heading.className = "action-card-heading";
+        heading.textContent = `[${action.action}] risk: ${action.risk} read-only: ${action.read_only}`;
+
+        const label = document.createElement("div");
+        label.className = "action-label";
+        label.textContent = action.label || action.action;
+
+        const previewLabel = document.createElement("span");
+        previewLabel.className = "muted small";
+        previewLabel.textContent = "command preview:";
+
+        const preview = document.createElement("code");
+        preview.textContent = action.command_preview || "";
+
+        const disabled = document.createElement("div");
+        disabled.className = "execution-disabled";
+        disabled.textContent = "Execution disabled in this stage";
+
+        card.append(heading, label, previewLabel, preview);
+        if (selectedHostName) {
+            const hostContext = document.createElement("div");
+            hostContext.className = "target-host-context";
+            hostContext.textContent = `Target host context: ${selectedHostName}`;
+            card.appendChild(hostContext);
+        }
+        card.appendChild(disabled);
+        wrapper.appendChild(card);
+    }
+    return wrapper;
 }
 
 function showWelcomeMessage() {
@@ -74,6 +128,143 @@ function formatSessionDate(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString();
+}
+
+
+function setSelectedHost(host) {
+    selectedHostId = host?.id || null;
+    selectedHostName = host?.name || "";
+    if (currentHostTitleNode) {
+        currentHostTitleNode.textContent = selectedHostName ? `Current host: ${selectedHostName}` : "Current host: none";
+    }
+    if (hostsList) {
+        for (const item of hostsList.querySelectorAll(".host-item")) {
+            item.classList.toggle("active", Number(item.dataset.hostId) === selectedHostId);
+        }
+    }
+}
+
+async function persistSessionHost(hostId) {
+    if (!sessionId) return;
+    const response = await fetch(`/api/chat/session/${sessionId}/host`, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({host_id: hostId}),
+    });
+    if (!response.ok) throw new Error(`Persist host failed: ${response.status}`);
+}
+
+async function selectHost(host, persist = true) {
+    setSelectedHost(host);
+    if (!persist || !sessionId) return;
+    try {
+        await persistSessionHost(host?.id || null);
+        if (hostsStatus) hostsStatus.textContent = host
+            ? `Selected host context saved: ${host.name}. No SSH connection was performed.`
+            : "Selected host context cleared. No SSH connection was performed.";
+    } catch (error) {
+        if (hostsStatus) hostsStatus.textContent = `Не удалось сохранить host context: ${error.message}`;
+    }
+}
+
+async function restoreSessionHost(hostId) {
+    if (!hostId) {
+        setSelectedHost(null);
+        return;
+    }
+    if (!hostsById.has(hostId)) {
+        await loadHosts();
+    }
+    setSelectedHost(hostsById.get(hostId) || null);
+}
+
+function renderHosts(items) {
+    if (!hostsList) return;
+    hostsById = new Map((items || []).map((host) => [host.id, host]));
+    hostsList.replaceChildren();
+    hostsList.classList.remove("empty");
+    if (!items.length) {
+        hostsList.classList.add("empty");
+        hostsList.textContent = "No hosts yet.";
+        setSelectedHost(null);
+        return;
+    }
+    if (selectedHostId && !items.some((item) => item.id === selectedHostId)) {
+        setSelectedHost(null);
+    }
+    for (const host of items) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "host-item";
+        button.dataset.hostId = String(host.id);
+        button.classList.toggle("active", host.id === selectedHostId);
+        button.addEventListener("click", () => selectHost(host));
+
+        const title = document.createElement("span");
+        title.className = "host-title";
+        title.textContent = host.name;
+
+        const endpoint = document.createElement("span");
+        endpoint.className = "host-meta";
+        endpoint.textContent = `${host.hostname}:${host.port}`;
+
+        const tags = document.createElement("span");
+        tags.className = "host-meta";
+        tags.textContent = host.tags?.length ? `tags: ${host.tags.join(", ")}` : "tags: —";
+
+        const status = document.createElement("span");
+        status.className = "host-meta";
+        status.textContent = host.enabled ? "enabled" : "disabled";
+
+        button.append(title, endpoint, tags, status);
+        hostsList.appendChild(button);
+    }
+}
+
+async function loadHosts() {
+    if (!hostsList) return null;
+    const response = await fetch("/api/hosts?limit=50&offset=0");
+    if (!response.ok) throw new Error(`Hosts failed: ${response.status}`);
+    const data = await response.json();
+    renderHosts(data.items || []);
+    if (hostsStatus) hostsStatus.textContent = "Inventory only. No SSH connection is performed in this stage.";
+    return data;
+}
+
+async function createHostFromPrompt() {
+    if (!newHostButton) return;
+    const name = prompt("Host display name, e.g. app01");
+    if (name === null) return;
+    const hostname = prompt("Hostname or IP, e.g. app01.example.local");
+    if (hostname === null) return;
+    const tagsInput = prompt("Tags comma-separated, e.g. nginx,prod", "") || "";
+    const tags = tagsInput.split(",").map((item) => item.trim()).filter(Boolean);
+    newHostButton.disabled = true;
+    try {
+        const response = await fetch("/api/hosts", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({name: name.trim(), hostname: hostname.trim(), port: 22, os_family: "linux", enabled: true, tags}),
+        });
+        if (!response.ok) {
+            let details = `Create host failed: ${response.status}`;
+            try {
+                const payload = await response.json();
+                if (payload.detail) details = Array.isArray(payload.detail) ? JSON.stringify(payload.detail) : payload.detail;
+            } catch (_) {
+                // Keep generic status if response is not JSON.
+            }
+            throw new Error(details);
+        }
+        const host = await response.json();
+        await loadHosts();
+        await selectHost(host);
+        if (hostsStatus) hostsStatus.textContent = `Host added: ${host.name}. No SSH connection was performed.`;
+    } catch (error) {
+        if (hostsStatus) hostsStatus.textContent = `Не удалось добавить host: ${error.message}`;
+    } finally {
+        newHostButton.disabled = false;
+    }
 }
 
 function renderSessions(items) {
@@ -132,6 +323,7 @@ async function createNewSession() {
         if (!response.ok) throw new Error(`Create failed: ${response.status}`);
         const data = await response.json();
         setCurrentSession(data.id, data.title);
+        if (selectedHostId) await persistSessionHost(selectedHostId);
         renderMessages([]);
         await loadSessions();
         input?.focus();
@@ -147,6 +339,7 @@ async function openSession(id) {
     if (!response.ok) throw new Error(`Session failed: ${response.status}`);
     const data = await response.json();
     setCurrentSession(data.id, data.title);
+    await restoreSessionHost(data.host_id);
     renderMessages(data.messages || []);
     await loadSessions();
     input?.focus();
@@ -392,6 +585,7 @@ for (const tab of tabs) {
 newSessionButton?.addEventListener("click", createNewSession);
 renameSessionButton?.addEventListener("click", renameCurrentSession);
 deleteSessionButton?.addEventListener("click", deleteCurrentSession);
+newHostButton?.addEventListener("click", createHostFromPrompt);
 
 kbSearchButton?.addEventListener("click", searchKbDocuments);
 for (const searchField of [kbSearchInput, kbTagFilter]) {
@@ -430,6 +624,7 @@ form?.addEventListener("submit", async (event) => {
     const message = input.value.trim();
     if (!message) return;
 
+    const hadSession = Boolean(sessionId);
     appendMessage("user", message);
     input.value = "";
     const button = form.querySelector("button");
@@ -453,7 +648,8 @@ form?.addEventListener("submit", async (event) => {
         }
         const data = await response.json();
         sessionId = data.session_id;
-        appendMessage("assistant", data.answer);
+        if (!hadSession && selectedHostId) await persistSessionHost(selectedHostId);
+        appendMessage("assistant", data.answer, data.actions || []);
         renderSources(data.sources || []);
         activatePanel("sources-panel");
         const sessionsData = await loadSessions();
@@ -469,4 +665,8 @@ form?.addEventListener("submit", async (event) => {
 
 loadSessions({openNewest: true}).catch((error) => {
     sessionsList.textContent = `Не удалось загрузить историю: ${error.message}`;
+});
+
+loadHosts().catch((error) => {
+    if (hostsList) hostsList.textContent = `Не удалось загрузить hosts: ${error.message}`;
 });

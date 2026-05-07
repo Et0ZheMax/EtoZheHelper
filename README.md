@@ -16,6 +16,8 @@ EtoZheHelper — будущий внутренний инженерный пом
 - Сохраняет chat sessions и messages в SQLite и показывает Investigation history в UI.
 - Пишет простые audit events.
 - Имеет pytest-тесты для KB loader, search и API.
+- Показывает structured action proposals через Action Policy Engine без выполнения команд.
+- Хранит inventory-only hosts и SSH profiles для будущих executor-этапов без подключений и секретов.
 
 ## Topic-aware assistant
 
@@ -39,19 +41,92 @@ Deterministic assistant теперь определяет troubleshooting-тем
 Команды из планов не выполняются приложением: они выводятся только как текстовые подсказки для оператора. Приложение по-прежнему не подключается по SSH, не запускает shell/executor, не вызывает внешние LLM/API и не отправляет данные наружу.
 
 
+## Action Policy Engine
+
+Stage 10 introduces structured action proposals. Actions are read-only allowlisted diagnostics with strict parameter validation. The app still does not execute commands. It only renders command previews and risk metadata.
+
+Action catalog includes read-only diagnostics for Linux host identity, uptime/load, memory, disk and inode usage, failed systemd units, network addresses/routes/TCP probes, DNS resolver checks, HTTP/TLS curl previews, systemd status/unit/journal reads, listening ports, Docker read-only inspection, and CUPS/printer status. Every proposal has `risk: "low"`, `read_only: true`, `requires_approval: true`, and `execution_enabled: false`.
+
+Catalog example:
+
+```bash
+curl http://127.0.0.1:8000/api/actions/catalog
+```
+
+Safe proposal example:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/actions/propose \
+  -H "Content-Type: application/json" \
+  -d '{"action":"systemd_status","params":{"service":"nginx"}}'
+```
+
+Unsafe values are rejected before any command preview is rendered:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/actions/propose \
+  -H "Content-Type: application/json" \
+  -d '{"action":"systemd_status","params":{"service":"nginx; rm -rf /"}}'
+```
+
+Validation is allowlist-only: unknown action keys are rejected; unknown parameters are rejected; service/container/printer/name parameters must match safe regular expressions; `port` must be `1..65535`; `lines` must be `20..500`; URLs must be `http://` or `https://`, include a host, and must not contain whitespace, quotes, backticks, shell metacharacters, redirects, or `$`. Command previews are built only from catalog templates, never from arbitrary user command strings.
+
+There is intentionally no execute endpoint in Stage 10. Chat responses may include parameter-free suggested action cards such as `resolved_status`, `disk_usage`, `inode_usage`, `failed_units`, `docker_ps_all`, `docker_system_df`, `cups_status`, and `lpstat_all`; the UI renders them as plain text and does not show an execute button.
+
 ## Diagnostic output analysis
 
 MVP умеет детерминированно анализировать вставленный пользователем обезличенный вывод команд: DNS/systemd/curl/TLS/disk/performance/SSH/Docker. Приложение не выполняет эти команды само, не подключается к хостам, не вызывает внешние LLM/API и использует только локальные правила анализа.
 
 Diagnostic output определяется по безопасным текстовым признакам: многострочный ввод, команды вроде `resolvectl status`, `getent hosts`, `dig`, `systemctl status`, `journalctl`, `curl -I`, `df -h`, `docker ps`, а также типичные фрагменты вывода (`HTTP/`, `Active:`, `Loaded:`, `connection refused`, `No space left on device`, `Permission denied`, `Exited`). Если признаки найдены, ассистент возвращает короткие findings, гипотезы и следующие read-only проверки вместо повторения стартового плана.
 
+
+## Host Inventory and SSH Profiles
+
+Stage 10.5 adds inventory-only host and SSH profile management. The app stores host metadata and non-secret auth references for future executor stages. It does not connect to hosts, does not verify credentials and does not execute commands.
+
+Create an SSH profile metadata record:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/ssh-profiles \
+  -H "Content-Type: application/json" \
+  -d '{"name":"support-default","username":"support","auth_type":"agent","sudo_mode":"none"}'
+```
+
+Create a host inventory record:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/hosts \
+  -H "Content-Type: application/json" \
+  -d '{"name":"app01","hostname":"app01.example.local","tags":["nginx","prod"],"ssh_profile_id":1}'
+```
+
+List inventory records:
+
+```bash
+curl http://127.0.0.1:8000/api/hosts
+curl http://127.0.0.1:8000/api/ssh-profiles
+```
+
+Unsafe host data is rejected:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/hosts \
+  -H "Content-Type: application/json" \
+  -d '{"name":"bad","hostname":"app01;whoami","password":"secret"}'
+```
+
+No passwords/private keys/tokens are stored. Fields with secret-looking names are rejected by request schemas. `key_ref` and `password_ref` are reference labels only; the app rejects PEM-like material, shell metacharacters, newlines and token-like blobs in those reference fields. The app does not read key files and does not validate credentials by connecting.
+
+The UI has a minimal `Hosts` panel that can add host metadata via prompts and select a current host context for the investigation. Selected host context is persisted on the chat session as metadata only, and is displayed next to action cards, but actions are still previews only and execution remains disabled.
+
 ## Что MVP пока НЕ умеет
 
 - Не выполняет SSH-подключения.
 - Не выполняет shell-команды и команды пользователя.
+- Не подключается к hosts из inventory и не проверяет SSH credentials.
 - Не запускает Ansible, Docker или Terraform.
 - Не вызывает внешние LLM/API и не отправляет пользовательские данные наружу.
-- Не реализует полноценный RAG, embeddings или policy engine.
+- Не реализует полноценный RAG, embeddings или executor для выполнения действий.
 - Не меняет инфраструктуру и не управляет удалёнными хостами.
 
 Stage 1 остаётся **local-only KB assistant**: ответы строятся только по локальным Markdown-файлам и детерминированной логике приложения.
@@ -276,20 +351,22 @@ SQLite создаётся автоматически при старте по п
 
 - `chat_sessions`;
 - `chat_messages`;
+- `hosts`;
+- `ssh_profiles`;
 - `audit_events`.
 
 При добавлении user/assistant messages у chat session обновляется `updated_at`. Audit events пишутся best-effort и не должны ломать основной сценарий чата.
 
-## Ограничения Stage 1
+## Ограничения Stage 10.5
 
-Stage 1 намеренно не содержит SSH, shell executor, remote execution, Ansible/Docker/Terraform execution, внешних LLM/API и отправки пользовательских данных наружу. Любые команды в ответах — это текстовые подсказки для оператора, а не действия приложения.
+Stage 10.5 намеренно не содержит SSH connect, shell executor, remote execution, local command execution, reachability checks, Ansible/Docker/Terraform execution, внешних LLM/API и отправки пользовательских данных наружу. Host Inventory и SSH Profiles хранят только metadata/non-secret references. Selected host context is persisted as metadata only. It is not used for execution in this stage. Любые команды и action cards в ответах — это только previews/текстовые подсказки для оператора, а не действия приложения.
 
 ## План следующих этапов
 
 1. Добавить нормализацию и полноценное индексирование KB.
 2. Добавить embeddings/RAG в локальном или контролируемом режиме.
-3. Спроектировать policy engine для безопасных диагностических действий.
-4. Добавить executor только как явно разрешённый и аудитируемый слой.
+3. Расширять Action Policy Engine новыми read-only allowlisted действиями.
+4. Добавить executor только в будущем как явно разрешённый и аудитируемый слой.
 5. Расширить UI: загрузка диагностического вывода и фильтры sources.
 6. Добавить GUI wrapper для локального desktop-сценария.
 
