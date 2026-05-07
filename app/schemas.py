@@ -275,6 +275,40 @@ class ActionRunListResponse(BaseModel):
     offset: int
 
 
+class ResolvedHostResponse(BaseModel):
+    id: int
+    name: str
+    hostname: str
+    port: int
+    os_family: str
+    enabled: bool
+    tags: list[str] = Field(default_factory=list)
+    ssh_profile_id: int | None = None
+
+
+class ResolvedSshProfileResponse(BaseModel):
+    id: int
+    name: str
+    username: str
+    auth_type: str
+    key_ref: str | None = None
+    password_ref: str | None = None
+    sudo_mode: str
+
+
+class ExecutionReadinessResponse(BaseModel):
+    ready: bool
+    run_id: int
+    status: str
+    action: str
+    command_preview: str
+    execution_enabled: bool
+    host: ResolvedHostResponse | None = None
+    ssh_profile: ResolvedSshProfileResponse | None = None
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     session_id: int
     answer: str

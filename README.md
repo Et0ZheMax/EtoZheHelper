@@ -98,6 +98,27 @@ curl http://127.0.0.1:8000/api/action-runs/1
 
 Every prepared run writes an `action_run_prepared` audit event with run id, session id, host id, action, category, risk, and `execution_enabled:false`. Real SSH execution remains future work: Stage 11 still does not connect over SSH, does not invoke subprocess/shell, does not perform reachability checks, does not read private key files, and does not store secrets.
 
+## Execution Readiness
+
+Stage 13 adds an execution readiness resolver for approved prepared runs. It resolves host and SSH profile metadata and reports whether a run is structurally ready for a future executor. It still does not connect over SSH, does not verify credentials and does not execute commands.
+
+Check readiness for an approved prepared run:
+
+```bash
+curl http://127.0.0.1:8000/api/action-runs/1/readiness
+```
+
+Readiness is metadata validation only. The resolver checks the action run status, stored command preview, host inventory fields, assigned SSH profile metadata, auth reference presence, and sudo mode warnings. Even when `ready` is `true`, `execution_enabled` remains `false`.
+
+Stage 13 explicitly performs:
+
+- no SSH connection;
+- no subprocess;
+- no socket, ping, DNS, or reachability checks;
+- no credential validation;
+- no private key or password secret reads;
+- no command execution.
+
 ## Approval Queue
 
 Stage 12 adds approval metadata for prepared action runs. Operators can approve, reject, or expire a prepared run. Approval does not execute anything and `execution_enabled` remains false. Real SSH execution remains future work.

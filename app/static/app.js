@@ -64,6 +64,68 @@ async function postActionRunDecision(runId, decision, body) {
     return response.json();
 }
 
+async function fetchActionRunReadiness(runId) {
+    const response = await fetch(`/api/action-runs/${runId}/readiness`);
+    if (!response.ok) {
+        let details = `Readiness check failed: ${response.status}`;
+        try {
+            const payload = await response.json();
+            if (payload.detail) details = Array.isArray(payload.detail) ? JSON.stringify(payload.detail) : payload.detail;
+        } catch (_) {
+            // Keep generic HTTP status when the response is not JSON.
+        }
+        throw new Error(details);
+    }
+    return response.json();
+}
+
+function appendReadinessList(parent, label, items) {
+    const title = document.createElement("div");
+    title.className = "readiness-label";
+    title.textContent = label;
+    parent.append(title);
+
+    const list = document.createElement("ul");
+    list.className = "readiness-list";
+    const values = items && items.length ? items : ["none"];
+    for (const item of values) {
+        const entry = document.createElement("li");
+        entry.textContent = item;
+        list.append(entry);
+    }
+    parent.append(list);
+}
+
+function renderReadinessPreview(parent, readiness) {
+    parent.replaceChildren();
+
+    const ready = document.createElement("div");
+    ready.className = readiness.ready ? "readiness-ready" : "readiness-blocked";
+    ready.textContent = `Ready for future executor: ${readiness.ready ? "yes" : "no"}`;
+
+    const execution = document.createElement("div");
+    execution.className = "execution-disabled";
+    execution.textContent = readiness.execution_enabled ? "Execution enabled" : "Execution disabled in Stage 13";
+
+    const commandLabel = document.createElement("div");
+    commandLabel.className = "readiness-label";
+    commandLabel.textContent = "command preview:";
+    const command = document.createElement("code");
+    command.textContent = readiness.command_preview || "";
+
+    const host = document.createElement("div");
+    host.className = "readiness-meta";
+    host.textContent = `Host: ${readiness.host?.name || "none"}`;
+
+    const sshProfile = document.createElement("div");
+    sshProfile.className = "readiness-meta";
+    sshProfile.textContent = `SSH profile: ${readiness.ssh_profile?.name || "none"}`;
+
+    parent.append(ready, execution, commandLabel, command, host, sshProfile);
+    appendReadinessList(parent, "blockers:", readiness.blockers || []);
+    appendReadinessList(parent, "warnings:", readiness.warnings || []);
+}
+
 function promptActionRunOperator() {
     const operator = window.prompt("Operator name", getOperatorLabel());
     if (operator === null) return null;
@@ -129,9 +191,34 @@ function renderPreparedRunResult(result, run) {
             const warning = document.createElement("div");
             warning.className = "execution-disabled";
             warning.textContent = "Approval is metadata only. No command was executed.";
+            const readinessResult = document.createElement("div");
+            readinessResult.className = "readiness-result";
+            readinessResult.hidden = true;
+
+            const readinessButton = document.createElement("button");
+            readinessButton.type = "button";
+            readinessButton.className = "compact";
+            readinessButton.textContent = "Check readiness";
+            readinessButton.addEventListener("click", async () => {
+                readinessButton.disabled = true;
+                readinessResult.hidden = false;
+                readinessResult.textContent = "Checking readiness…";
+                try {
+                    const readiness = await fetchActionRunReadiness(approved.id);
+                    renderReadinessPreview(readinessResult, readiness);
+                    if (preparedRunsStatus) {
+                        preparedRunsStatus.textContent = `Prepared runs: latest #${approved.id} readiness checked. No command was executed.`;
+                    }
+                } catch (error) {
+                    readinessResult.textContent = `Could not check readiness: ${error.message}`;
+                } finally {
+                    readinessButton.disabled = false;
+                }
+            });
+
             result.append(approvedTitle);
             appendDecisionNote(result, approved.approval_note);
-            result.append(warning);
+            result.append(warning, readinessButton, readinessResult);
             if (preparedRunsStatus) {
                 preparedRunsStatus.textContent = `Prepared runs: latest #${approved.id} approved. No command was executed.`;
             }

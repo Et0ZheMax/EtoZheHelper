@@ -454,3 +454,37 @@ button.compact.danger:hover { background: #fee2e2; }
     font-size: 13px;
     overflow-wrap: anywhere;
 }
+.readiness-result {
+    display: grid;
+    gap: 6px;
+    padding: 8px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    background: #ffffff;
+}
+.readiness-result[hidden] {
+    display: none;
+}
+.readiness-ready, .readiness-blocked {
+    font-size: 13px;
+    font-weight: 800;
+}
+.readiness-ready { color: var(--safe-text); }
+.readiness-blocked { color: #991b1b; }
+.readiness-label {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 800;
+}
+.readiness-meta {
+    color: var(--text);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+.readiness-list {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
