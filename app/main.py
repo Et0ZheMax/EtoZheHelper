@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.actions import router as actions_router
 from app.api.chat import router as api_router
+from app.api.hosts import router as hosts_router
 from app.audit.logger import log_event
 from app.config import STATIC_DIR, get_settings
 from app.db import SessionLocal, init_db
@@ -28,4 +29,5 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(api_router, prefix="/api")
 app.include_router(actions_router, prefix="/api")
+app.include_router(hosts_router, prefix="/api")
 app.include_router(web_router)

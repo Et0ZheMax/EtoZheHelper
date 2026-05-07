@@ -22,6 +22,13 @@
             <p class="muted small">История хранится локально в SQLite. Не сохраняй секреты, токены и приватные ключи в сообщениях.</p>
         </section>
 
+        <section class="hosts-panel">
+            <h2>Hosts</h2>
+            <button id="new-host-button" class="secondary" type="button">+ Add host</button>
+            <div id="hosts-list" class="hosts-list empty">No hosts yet.</div>
+            <p id="hosts-status" class="muted small" aria-live="polite">Inventory only. No SSH connection is performed in this stage.</p>
+        </section>
+
         <section class="kb-controls">
             <h2>KB Browser</h2>
             <label for="kb-search-input">Search KB</label>
@@ -98,6 +105,7 @@
             <div>
                 <h2>Chat</h2>
                 <p id="current-session-title" class="muted">No investigation selected</p>
+                <p id="current-host-title" class="muted small">Current host: none</p>
                 <p class="muted small">Спроси про симптом, ошибку или runbook из локальной базы.</p>
                 <div class="chat-actions">
                     <button id="rename-session-button" class="compact" type="button" disabled>Rename</button>

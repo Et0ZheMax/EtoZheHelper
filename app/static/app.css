@@ -381,3 +381,49 @@ button.compact.danger:hover { background: #fee2e2; }
     font-size: 12px;
     font-weight: 800;
 }
+.hosts-panel {
+    display: grid;
+    gap: 10px;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+}
+.hosts-list {
+    display: grid;
+    gap: 8px;
+    max-height: 28vh;
+    overflow-y: auto;
+}
+.host-item {
+    display: grid;
+    gap: 5px;
+    width: 100%;
+    min-height: auto;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #f8fafc;
+    color: var(--text);
+    text-align: left;
+}
+.host-item:hover, .host-item:focus {
+    border-color: var(--accent);
+    background: #eef4ff;
+    outline: none;
+}
+.host-item.active {
+    border-color: var(--accent);
+    background: var(--user);
+}
+.host-title {
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+.host-meta, .target-host-context {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+}
+.target-host-context {
+    font-weight: 700;
+}

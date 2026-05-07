@@ -1,5 +1,7 @@
 let sessionId = null;
 let currentSessionTitle = "";
+let selectedHostId = null;
+let selectedHostName = "";
 
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message-input");
@@ -16,6 +18,10 @@ const newSessionButton = document.querySelector("#new-session-button");
 const currentSessionTitleNode = document.querySelector("#current-session-title");
 const renameSessionButton = document.querySelector("#rename-session-button");
 const deleteSessionButton = document.querySelector("#delete-session-button");
+const currentHostTitleNode = document.querySelector("#current-host-title");
+const newHostButton = document.querySelector("#new-host-button");
+const hostsList = document.querySelector("#hosts-list");
+const hostsStatus = document.querySelector("#hosts-status");
 const kbSearchInput = document.querySelector("#kb-search-input");
 const kbDomainFilter = document.querySelector("#kb-domain-filter");
 const kbTypeFilter = document.querySelector("#kb-type-filter");
@@ -79,7 +85,14 @@ function renderActionCards(actions) {
         disabled.className = "execution-disabled";
         disabled.textContent = "Execution disabled in this stage";
 
-        card.append(heading, label, previewLabel, preview, disabled);
+        card.append(heading, label, previewLabel, preview);
+        if (selectedHostName) {
+            const hostContext = document.createElement("div");
+            hostContext.className = "target-host-context";
+            hostContext.textContent = `Target host context: ${selectedHostName}`;
+            card.appendChild(hostContext);
+        }
+        card.appendChild(disabled);
         wrapper.appendChild(card);
     }
     return wrapper;
@@ -114,6 +127,108 @@ function formatSessionDate(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return value;
     return date.toLocaleString();
+}
+
+
+function setSelectedHost(host) {
+    selectedHostId = host?.id || null;
+    selectedHostName = host?.name || "";
+    if (currentHostTitleNode) {
+        currentHostTitleNode.textContent = selectedHostName ? `Current host: ${selectedHostName}` : "Current host: none";
+    }
+    if (hostsList) {
+        for (const item of hostsList.querySelectorAll(".host-item")) {
+            item.classList.toggle("active", Number(item.dataset.hostId) === selectedHostId);
+        }
+    }
+}
+
+function renderHosts(items) {
+    if (!hostsList) return;
+    hostsList.replaceChildren();
+    hostsList.classList.remove("empty");
+    if (!items.length) {
+        hostsList.classList.add("empty");
+        hostsList.textContent = "No hosts yet.";
+        setSelectedHost(null);
+        return;
+    }
+    if (selectedHostId && !items.some((item) => item.id === selectedHostId)) {
+        setSelectedHost(null);
+    }
+    for (const host of items) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "host-item";
+        button.dataset.hostId = String(host.id);
+        button.classList.toggle("active", host.id === selectedHostId);
+        button.addEventListener("click", () => setSelectedHost(host));
+
+        const title = document.createElement("span");
+        title.className = "host-title";
+        title.textContent = host.name;
+
+        const endpoint = document.createElement("span");
+        endpoint.className = "host-meta";
+        endpoint.textContent = `${host.hostname}:${host.port}`;
+
+        const tags = document.createElement("span");
+        tags.className = "host-meta";
+        tags.textContent = host.tags?.length ? `tags: ${host.tags.join(", ")}` : "tags: —";
+
+        const status = document.createElement("span");
+        status.className = "host-meta";
+        status.textContent = host.enabled ? "enabled" : "disabled";
+
+        button.append(title, endpoint, tags, status);
+        hostsList.appendChild(button);
+    }
+}
+
+async function loadHosts() {
+    if (!hostsList) return null;
+    const response = await fetch("/api/hosts?limit=50&offset=0");
+    if (!response.ok) throw new Error(`Hosts failed: ${response.status}`);
+    const data = await response.json();
+    renderHosts(data.items || []);
+    if (hostsStatus) hostsStatus.textContent = "Inventory only. No SSH connection is performed in this stage.";
+    return data;
+}
+
+async function createHostFromPrompt() {
+    if (!newHostButton) return;
+    const name = prompt("Host display name, e.g. app01");
+    if (name === null) return;
+    const hostname = prompt("Hostname or IP, e.g. app01.example.local");
+    if (hostname === null) return;
+    const tagsInput = prompt("Tags comma-separated, e.g. nginx,prod", "") || "";
+    const tags = tagsInput.split(",").map((item) => item.trim()).filter(Boolean);
+    newHostButton.disabled = true;
+    try {
+        const response = await fetch("/api/hosts", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({name: name.trim(), hostname: hostname.trim(), port: 22, os_family: "linux", enabled: true, tags}),
+        });
+        if (!response.ok) {
+            let details = `Create host failed: ${response.status}`;
+            try {
+                const payload = await response.json();
+                if (payload.detail) details = Array.isArray(payload.detail) ? JSON.stringify(payload.detail) : payload.detail;
+            } catch (_) {
+                // Keep generic status if response is not JSON.
+            }
+            throw new Error(details);
+        }
+        const host = await response.json();
+        await loadHosts();
+        setSelectedHost(host);
+        if (hostsStatus) hostsStatus.textContent = `Host added: ${host.name}. No SSH connection was performed.`;
+    } catch (error) {
+        if (hostsStatus) hostsStatus.textContent = `Не удалось добавить host: ${error.message}`;
+    } finally {
+        newHostButton.disabled = false;
+    }
 }
 
 function renderSessions(items) {
@@ -432,6 +547,7 @@ for (const tab of tabs) {
 newSessionButton?.addEventListener("click", createNewSession);
 renameSessionButton?.addEventListener("click", renameCurrentSession);
 deleteSessionButton?.addEventListener("click", deleteCurrentSession);
+newHostButton?.addEventListener("click", createHostFromPrompt);
 
 kbSearchButton?.addEventListener("click", searchKbDocuments);
 for (const searchField of [kbSearchInput, kbTagFilter]) {
@@ -509,4 +625,8 @@ form?.addEventListener("submit", async (event) => {
 
 loadSessions({openNewest: true}).catch((error) => {
     sessionsList.textContent = `Не удалось загрузить историю: ${error.message}`;
+});
+
+loadHosts().catch((error) => {
+    if (hostsList) hostsList.textContent = `Не удалось загрузить hosts: ${error.message}`;
 });

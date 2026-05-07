@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -8,6 +8,40 @@ from app.db import Base
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class SshProfile(Base):
+    __tablename__ = "ssh_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    username: Mapped[str] = mapped_column(String(128))
+    auth_type: Mapped[str] = mapped_column(String(32), default="manual")
+    key_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    password_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    sudo_mode: Mapped[str] = mapped_column(String(32), default="none")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+    hosts: Mapped[list["Host"]] = relationship(back_populates="ssh_profile")
+
+
+class Host(Base):
+    __tablename__ = "hosts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    hostname: Mapped[str] = mapped_column(String(253), index=True)
+    port: Mapped[int] = mapped_column(Integer, default=22)
+    os_family: Mapped[str] = mapped_column(String(32), default="linux")
+    tags: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ssh_profile_id: Mapped[int | None] = mapped_column(ForeignKey("ssh_profiles.id"), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+    ssh_profile: Mapped[SshProfile | None] = relationship(back_populates="hosts")
 
 
 class ChatSession(Base):
