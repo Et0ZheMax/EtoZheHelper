@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.actions.catalog import get_action_definition
 from app.audit.logger import log_event
+from app.execution.analysis import analyze_execution_output
 from app.execution.resolver import resolve_action_run_readiness
 from app.execution.ssh_client import DefaultSshClient, SshClientProtocol
 from app.models import ActionExecution, ActionRun, utcnow
@@ -112,6 +113,11 @@ def _finish_execution(
     execution.error_category = error_category
     if warnings is not None:
         execution.warnings_json = _warnings_json(warnings)
+    if status in {"completed", "failed", "timed_out"}:
+        analysis = analyze_execution_output(stdout, stderr)
+        execution.analysis_status = analysis.status
+        execution.analysis_json = analysis.analysis_json
+        execution.analysis_summary = analysis.summary
     db.commit()
     db.refresh(execution)
     return execution

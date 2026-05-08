@@ -8,6 +8,7 @@ from app.actions.models import ActionRequest
 from app.actions.policy import InvalidActionParamsError, UnknownActionError, propose_action
 from app.audit.logger import log_event
 from app.db import get_db
+from app.execution.analysis import parse_analysis_json
 from app.execution.executor import ActionExecutionBlockedError, execute_approved_action_run, warnings_from_json
 from app.execution.models import ExecutionReadiness
 from app.execution.resolver import resolve_action_run_readiness
@@ -157,6 +158,9 @@ def _execution_response(execution: ActionExecution) -> ActionExecutionResponse:
         error=execution.error,
         error_category=execution.error_category,
         warnings=warnings_from_json(execution.warnings_json),
+        analysis_status=execution.analysis_status,
+        analysis_summary=execution.analysis_summary,
+        analysis=parse_analysis_json(execution.analysis_json),
     )
 
 

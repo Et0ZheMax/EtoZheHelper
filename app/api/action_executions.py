@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.execution.analysis import parse_analysis_json
 from app.execution.executor import warnings_from_json
 from app.models import ActionExecution
 from app.schemas import ActionExecutionResponse
@@ -29,6 +30,9 @@ def _execution_response(execution: ActionExecution) -> ActionExecutionResponse:
         error=execution.error,
         error_category=execution.error_category,
         warnings=warnings_from_json(execution.warnings_json),
+        analysis_status=execution.analysis_status,
+        analysis_summary=execution.analysis_summary,
+        analysis=parse_analysis_json(execution.analysis_json),
     )
 
 

@@ -488,3 +488,24 @@ button.compact.danger:hover { background: #fee2e2; }
     font-size: 12px;
     line-height: 1.4;
 }
+.analysis-block {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #f8fafc;
+}
+.analysis-finding {
+    display: grid;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #ffffff;
+}
+.analysis-finding-title {
+    font-weight: 800;
+    color: var(--safe-text);
+}
