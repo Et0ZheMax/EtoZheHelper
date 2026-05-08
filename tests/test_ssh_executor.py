@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -108,6 +109,9 @@ def _get_execution(execution_id):
             "command_preview": execution.command_preview,
             "duration_ms": execution.duration_ms,
             "error_category": execution.error_category,
+            "analysis_status": execution.analysis_status,
+            "analysis_summary": execution.analysis_summary,
+            "analysis_json": execution.analysis_json,
         }
     finally:
         db.close()
@@ -456,3 +460,119 @@ def test_action_run_dynamic_routes_do_not_shadow_readiness_or_executions():
     assert executions_response.status_code == 200
     assert detail_response.status_code == 200
     assert execution_detail_response.status_code == 200
+
+
+def test_completed_execution_stores_analysis_for_analyzable_stdout():
+    run_id, _, _ = _create_ready_run()
+    stdout = b"systemctl status nginx --no-pager\nLoaded: loaded\nActive: failed (Result: exit-code)\nFailed to start nginx\n"
+    fake = FakeSshClient(SshCommandResult(exit_code=0, stdout=stdout, stderr=b""))
+
+    execution_id = _execute(run_id, fake)
+    payload = _get_execution(execution_id)
+
+    assert payload["status"] == "completed"
+    assert payload["analysis_status"] == "analyzed"
+    assert payload["analysis_summary"] is not None
+    parsed = json.loads(payload["analysis_json"])
+    assert parsed["topic"] == "systemd"
+    assert parsed["findings"]
+
+
+def test_failed_execution_with_stderr_stores_analysis_when_analyzable():
+    run_id, _, _ = _create_ready_run()
+    stderr = b"write failed: No space left on device\n"
+    fake = FakeSshClient(SshCommandResult(exit_code=1, stdout=b"", stderr=stderr))
+
+    execution_id = _execute(run_id, fake)
+    payload = _get_execution(execution_id)
+
+    assert payload["status"] == "failed"
+    assert payload["analysis_status"] == "analyzed"
+    assert "disk" in payload["analysis_json"].lower()
+
+
+def test_timed_out_execution_with_partial_output_can_be_analyzed():
+    run_id, _, _ = _create_ready_run()
+    stdout = b"systemctl status nginx --no-pager\nActive: failed (Result: timeout)\n"
+    fake = FakeSshClient(SshCommandResult(exit_code=None, stdout=stdout, stderr=b"", timed_out=True))
+
+    execution_id = _execute(run_id, fake)
+    payload = _get_execution(execution_id)
+
+    assert payload["status"] == "timed_out"
+    assert payload["analysis_status"] == "analyzed"
+    assert payload["analysis_json"] is not None
+
+
+def test_blocked_execution_does_not_analyze():
+    run_id, _, _ = _create_ready_run(status="prepared")
+    fake = FakeSshClient()
+
+    exc = _blocked(run_id, fake)
+    payload = _get_execution(exc.execution.id)
+
+    assert payload["status"] == "blocked"
+    assert payload["analysis_status"] is None
+    assert payload["analysis_json"] is None
+
+
+def test_execution_detail_response_includes_parsed_analysis_fields():
+    run_id, _, _ = _create_ready_run()
+    stdout = b"systemctl status nginx --no-pager\nActive: failed (Result: exit-code)\n"
+    execution_id = _execute(run_id, FakeSshClient(SshCommandResult(exit_code=0, stdout=stdout, stderr=b"")))
+
+    with TestClient(app) as client:
+        response = client.get(f"/api/action-executions/{execution_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analysis_status"] == "analyzed"
+    assert payload["analysis_summary"]
+    assert isinstance(payload["analysis"], dict)
+    assert payload["analysis"]["findings"]
+
+
+def test_execution_list_response_includes_analysis_summary_fields():
+    run_id, _, _ = _create_ready_run()
+    stdout = b"systemctl status nginx --no-pager\nActive: failed (Result: exit-code)\n"
+    _execute(run_id, FakeSshClient(SshCommandResult(exit_code=0, stdout=stdout, stderr=b"")))
+
+    with TestClient(app) as client:
+        response = client.get(f"/api/action-runs/{run_id}/executions")
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["analysis_status"] == "analyzed"
+    assert item["analysis_summary"]
+    assert isinstance(item["analysis"], dict)
+
+
+def test_execute_api_response_includes_analysis_fields(monkeypatch):
+    run_id, _, _ = _create_ready_run()
+
+    class ApiFakeSshClient(FakeSshClient):
+        def __init__(self):
+            super().__init__(SshCommandResult(exit_code=0, stdout=b"systemctl status nginx --no-pager\nActive: failed\n", stderr=b""))
+
+    monkeypatch.setattr("app.execution.executor.DefaultSshClient", ApiFakeSshClient)
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/action-runs/{run_id}/execute", json={"operator": "max"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analysis_status"] == "analyzed"
+    assert payload["analysis_summary"]
+    assert payload["analysis"]["findings"]
+
+
+def test_paramiko_remains_only_in_ssh_client_adapter_after_analysis_stage():
+    allowed = Path("app/execution/ssh_client.py")
+    offenders = []
+
+    for path in Path("app").rglob("*.py"):
+        text = path.read_text(encoding="utf-8").casefold()
+        if "paramiko" in text and path != allowed:
+            offenders.append(str(path))
+
+    assert offenders == []

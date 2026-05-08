@@ -99,6 +99,9 @@ def _ensure_sqlite_action_executions_columns() -> None:
         "error": "ALTER TABLE action_executions ADD COLUMN error TEXT",
         "error_category": "ALTER TABLE action_executions ADD COLUMN error_category VARCHAR(64)",
         "warnings_json": "ALTER TABLE action_executions ADD COLUMN warnings_json TEXT DEFAULT '[]' NOT NULL",
+        "analysis_json": "ALTER TABLE action_executions ADD COLUMN analysis_json TEXT",
+        "analysis_summary": "ALTER TABLE action_executions ADD COLUMN analysis_summary TEXT",
+        "analysis_status": "ALTER TABLE action_executions ADD COLUMN analysis_status VARCHAR(32)",
     }
     with engine.begin() as connection:
         for column_name, statement in migrations.items():

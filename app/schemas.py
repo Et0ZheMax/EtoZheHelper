@@ -303,6 +303,9 @@ class ActionExecutionResponse(BaseModel):
     error: str | None = None
     error_category: str | None = None
     warnings: list[str] = Field(default_factory=list)
+    analysis_status: str | None = None
+    analysis_summary: str | None = None
+    analysis: dict[str, object] | None = None
 
 
 class ActionExecutionListResponse(BaseModel):

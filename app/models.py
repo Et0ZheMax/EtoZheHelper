@@ -135,6 +135,9 @@ class ActionExecution(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     warnings_json: Mapped[str] = mapped_column(Text, default="[]")
+    analysis_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    analysis_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    analysis_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     run: Mapped[ActionRun] = relationship()
     host: Mapped[Host | None] = relationship()

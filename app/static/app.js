@@ -190,6 +190,93 @@ function appendExecutionPre(parent, label, text, copyLabel) {
     parent.append(title, copyButton, pre);
 }
 
+
+function renderExecutionAnalysis(parent, execution) {
+    const status = execution.analysis_status;
+    if (!status) {
+        return;
+    }
+
+    const block = document.createElement("div");
+    block.className = "analysis-block";
+
+    const title = document.createElement("div");
+    title.className = "readiness-label";
+    title.textContent = "Analysis";
+    block.append(title);
+
+    const statusLine = document.createElement("div");
+    statusLine.className = status === "analyzed" ? "readiness-ready" : "readiness-meta";
+    if (status === "skipped_empty_output") {
+        statusLine.textContent = "Analysis skipped: empty output.";
+        block.append(statusLine);
+        parent.append(block);
+        return;
+    }
+    if (status === "skipped_too_large") {
+        statusLine.textContent = "Analysis skipped: output too large.";
+        block.append(statusLine);
+        parent.append(block);
+        return;
+    }
+    if (status === "not_applicable") {
+        statusLine.textContent = "No actionable findings detected.";
+        block.append(statusLine);
+        parent.append(block);
+        return;
+    }
+    if (status === "failed") {
+        statusLine.textContent = "Analysis failed safely.";
+        block.append(statusLine);
+        parent.append(block);
+        return;
+    }
+
+    statusLine.textContent = `Status: ${status}`;
+    block.append(statusLine);
+    if (execution.analysis_summary) {
+        const summary = document.createElement("div");
+        summary.className = "readiness-meta";
+        summary.textContent = `Summary: ${execution.analysis_summary}`;
+        block.append(summary);
+    }
+
+    const analysis = execution.analysis || {};
+    const findings = Array.isArray(analysis.findings) ? analysis.findings : [];
+    if (findings.length) {
+        const findingsTitle = document.createElement("div");
+        findingsTitle.className = "readiness-label";
+        findingsTitle.textContent = "Findings";
+        block.append(findingsTitle);
+        for (const finding of findings) {
+            const item = document.createElement("div");
+            item.className = "analysis-finding";
+            const heading = document.createElement("div");
+            heading.className = "analysis-finding-title";
+            heading.textContent = `[${finding.severity || "info"}] ${finding.title || "Finding"}`;
+            item.append(heading);
+            if (finding.evidence) {
+                const evidence = document.createElement("div");
+                evidence.className = "readiness-meta";
+                evidence.textContent = `Evidence: ${finding.evidence}`;
+                item.append(evidence);
+            }
+            if (finding.interpretation) {
+                const interpretation = document.createElement("div");
+                interpretation.className = "readiness-meta";
+                interpretation.textContent = `Interpretation: ${finding.interpretation}`;
+                item.append(interpretation);
+            }
+            appendReadinessList(item, "Next steps:", Array.isArray(finding.next_steps) ? finding.next_steps : []);
+            block.append(item);
+        }
+    }
+
+    appendReadinessList(block, "Hypotheses", Array.isArray(analysis.hypotheses) ? analysis.hypotheses : []);
+    appendReadinessList(block, "Next checks", Array.isArray(analysis.next_checks) ? analysis.next_checks : []);
+    parent.append(block);
+}
+
 function renderExecutionResult(parent, execution) {
     parent.replaceChildren();
     const notice = document.createElement("div");
@@ -224,6 +311,7 @@ function renderExecutionResult(parent, execution) {
     appendExecutionPre(parent, "stdout:", execution.stdout || "", "Copy stdout");
     appendExecutionPre(parent, "stderr:", execution.stderr || "", "Copy stderr");
     appendReadinessList(parent, "warnings:", execution.warnings || []);
+    renderExecutionAnalysis(parent, execution);
 }
 
 function renderLatestExecutions(parent, runId) {
@@ -256,7 +344,8 @@ function renderLatestExecutions(parent, runId) {
                 const summary = document.createElement("span");
                 const exitText = execution.exit_code === null || execution.exit_code === undefined ? "" : ` exit=${execution.exit_code}`;
                 const durationText = execution.duration_ms === null || execution.duration_ms === undefined ? "" : ` ${execution.duration_ms}ms`;
-                summary.textContent = `#${execution.id} ${execution.status}${exitText}${durationText}`;
+                const analysisText = execution.analysis_summary ? ` analysis=${execution.analysis_status}: ${execution.analysis_summary}` : (execution.analysis_status ? ` analysis=${execution.analysis_status}` : "");
+                summary.textContent = `#${execution.id} ${execution.status}${exitText}${durationText}${analysisText}`;
 
                 const viewButton = document.createElement("button");
                 viewButton.type = "button";
