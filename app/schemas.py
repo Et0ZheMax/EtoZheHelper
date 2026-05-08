@@ -268,6 +268,50 @@ class ActionRunResponse(BaseModel):
     created_at: datetime
 
 
+class ActionRunExecuteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator: str = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_secret_fields(cls, data: Any) -> Any:
+        return _reject_secret_extra_fields(data)
+
+    @field_validator("operator")
+    @classmethod
+    def validate_operator(cls, value: str) -> str:
+        return _validate_operator(value)
+
+
+class ActionExecutionResponse(BaseModel):
+    id: int
+    run_id: int
+    host_id: int | None = None
+    ssh_profile_id: int | None = None
+    action: str
+    command_preview: str
+    status: str
+    exit_code: int | None = None
+    stdout: str
+    stderr: str
+    stdout_truncated: bool
+    stderr_truncated: bool
+    started_at: datetime
+    finished_at: datetime | None = None
+    duration_ms: int | None = None
+    error: str | None = None
+    error_category: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ActionExecutionListResponse(BaseModel):
+    items: list[ActionExecutionResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 class ActionRunListResponse(BaseModel):
     items: list[ActionRunResponse]
     total: int

@@ -8,13 +8,17 @@ from app.actions.models import ActionRequest
 from app.actions.policy import InvalidActionParamsError, UnknownActionError, propose_action
 from app.audit.logger import log_event
 from app.db import get_db
+from app.execution.executor import ActionExecutionBlockedError, execute_approved_action_run, warnings_from_json
 from app.execution.models import ExecutionReadiness
 from app.execution.resolver import resolve_action_run_readiness
-from app.models import ACTION_RUN_STATUSES, ActionRun, ChatSession, Host, utcnow
+from app.models import ACTION_RUN_STATUSES, ActionExecution, ActionRun, ChatSession, Host, utcnow
 from app.schemas import (
+    ActionExecutionListResponse,
+    ActionExecutionResponse,
     ActionRunApproveRequest,
     ActionRunExpireRequest,
     ActionRunListResponse,
+    ActionRunExecuteRequest,
     ActionRunPrepareRequest,
     ActionRunRejectRequest,
     ActionRunResponse,
@@ -130,6 +134,29 @@ def _readiness_response(readiness: ExecutionReadiness) -> ExecutionReadinessResp
         ssh_profile=ssh_profile,
         blockers=list(readiness.blockers),
         warnings=list(readiness.warnings),
+    )
+
+
+def _execution_response(execution: ActionExecution) -> ActionExecutionResponse:
+    return ActionExecutionResponse(
+        id=execution.id,
+        run_id=execution.run_id,
+        host_id=execution.host_id,
+        ssh_profile_id=execution.ssh_profile_id,
+        action=execution.action,
+        command_preview=execution.command_preview,
+        status=execution.status,
+        exit_code=execution.exit_code,
+        stdout=execution.stdout,
+        stderr=execution.stderr,
+        stdout_truncated=execution.stdout_truncated,
+        stderr_truncated=execution.stderr_truncated,
+        started_at=execution.started_at,
+        finished_at=execution.finished_at,
+        duration_ms=execution.duration_ms,
+        error=execution.error,
+        error_category=execution.error_category,
+        warnings=warnings_from_json(execution.warnings_json),
     )
 
 
@@ -339,6 +366,46 @@ def get_action_run_readiness(run_id: int, db: Session = Depends(get_db)) -> Exec
         },
     )
     return _readiness_response(readiness)
+
+
+@router.post("/{run_id}/execute", response_model=ActionExecutionResponse)
+def execute_action_run(
+    run_id: int, payload: ActionRunExecuteRequest, db: Session = Depends(get_db)
+) -> ActionExecutionResponse:
+    try:
+        execution = execute_approved_action_run(db, run_id, payload.operator)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Action run not found") from exc
+    except ActionExecutionBlockedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "execution_id": exc.execution.id,
+                "status": "blocked",
+                "blockers": exc.blockers,
+                "message": "Execution was blocked before SSH connection.",
+            },
+        ) from exc
+    return _execution_response(execution)
+
+
+@router.get("/{run_id}/executions", response_model=ActionExecutionListResponse)
+def list_action_run_executions(
+    run_id: int,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> ActionExecutionListResponse:
+    _run_or_404(db, run_id)
+    query = db.query(ActionExecution).filter(ActionExecution.run_id == run_id)
+    total = query.count()
+    executions = query.order_by(ActionExecution.started_at.desc(), ActionExecution.id.desc()).offset(offset).limit(limit).all()
+    return ActionExecutionListResponse(
+        items=[_execution_response(execution) for execution in executions],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{run_id}", response_model=ActionRunResponse)

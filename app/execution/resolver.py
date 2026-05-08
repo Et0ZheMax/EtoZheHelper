@@ -8,8 +8,8 @@ from app.models import ActionRun, Host, SshProfile
 APPROVED_STATUS = "approved"
 SUPPORTED_AUTH_TYPES = {"agent", "key", "manual", "password"}
 SUPPORTED_SUDO_MODES = {"none", "prompt", "nopasswd_limited"}
-STAGE_13_WARNING = "Stage 13 does not connect over SSH and does not execute commands."
-EXECUTION_DISABLED_WARNING = "Execution remains disabled in Stage 13."
+STAGE_14_READINESS_WARNING = "Readiness checks metadata only; SSH execution requires the separate approved read-only Stage 14 execute endpoint."
+EXECUTION_DISABLED_WARNING = "Historical execution_enabled=false does not block the Stage 14 approved read-only execute endpoint."
 NOT_APPROVED_BLOCKER = "Action run must be approved before executor readiness can be checked."
 NO_HOST_BLOCKER = "Approved run has no host_id. Select a host and prepare a host-targeted run."
 HOST_NOT_FOUND_BLOCKER = "Referenced host was not found."
@@ -64,7 +64,7 @@ def resolve_action_run_readiness(db: Session, run_id: int) -> ExecutionReadiness
         raise LookupError("Action run not found")
 
     blockers: list[str] = []
-    warnings = [STAGE_13_WARNING]
+    warnings = [STAGE_14_READINESS_WARNING]
     host_context: ResolvedHost | None = None
     profile_context: ResolvedSshProfile | None = None
 

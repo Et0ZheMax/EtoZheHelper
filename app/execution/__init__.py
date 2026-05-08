@@ -1,5 +1,5 @@
-"""Execution readiness resolver package.
+"""Execution readiness and approved read-only SSH executor support.
 
-Stage 13 intentionally contains metadata-only resolver code. It does not
-connect to hosts or execute commands.
+Readiness resolution remains metadata-only. Stage 14 execution is available only
+through the approved ActionRun SSH executor path.
 """

@@ -45,6 +45,18 @@ function getOperatorLabel() {
     return localStorage.getItem("actionRunOperator") || "local-operator";
 }
 
+function formatApiErrorDetail(payload, fallback) {
+    if (!payload || payload.detail === undefined || payload.detail === null) return fallback;
+    if (Array.isArray(payload.detail)) return JSON.stringify(payload.detail);
+    if (typeof payload.detail === "object") {
+        if (payload.detail.message && payload.detail.execution_id) {
+            return `${payload.detail.message} Execution #${payload.detail.execution_id}.`;
+        }
+        return JSON.stringify(payload.detail);
+    }
+    return payload.detail;
+}
+
 async function postActionRunDecision(runId, decision, body) {
     const response = await fetch(`/api/action-runs/${runId}/${decision}`, {
         method: "POST",
@@ -55,7 +67,26 @@ async function postActionRunDecision(runId, decision, body) {
         let details = `${decision} failed: ${response.status}`;
         try {
             const payload = await response.json();
-            if (payload.detail) details = Array.isArray(payload.detail) ? JSON.stringify(payload.detail) : payload.detail;
+            details = formatApiErrorDetail(payload, details);
+        } catch (_) {
+            // Keep generic HTTP status when the response is not JSON.
+        }
+        throw new Error(details);
+    }
+    return response.json();
+}
+
+async function postActionRunExecution(runId, operator) {
+    const response = await fetch(`/api/action-runs/${runId}/execute`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({operator}),
+    });
+    if (!response.ok) {
+        let details = `Read-only SSH check failed: ${response.status}`;
+        try {
+            const payload = await response.json();
+            details = formatApiErrorDetail(payload, details);
         } catch (_) {
             // Keep generic HTTP status when the response is not JSON.
         }
@@ -70,13 +101,187 @@ async function fetchActionRunReadiness(runId) {
         let details = `Readiness check failed: ${response.status}`;
         try {
             const payload = await response.json();
-            if (payload.detail) details = Array.isArray(payload.detail) ? JSON.stringify(payload.detail) : payload.detail;
+            details = formatApiErrorDetail(payload, details);
         } catch (_) {
             // Keep generic HTTP status when the response is not JSON.
         }
         throw new Error(details);
     }
     return response.json();
+}
+
+async function fetchActionRunExecutions(runId) {
+    const response = await fetch(`/api/action-runs/${runId}/executions?limit=5&offset=0`);
+    if (!response.ok) {
+        let details = `Execution list failed: ${response.status}`;
+        try {
+            const payload = await response.json();
+            details = formatApiErrorDetail(payload, details);
+        } catch (_) {
+            // Keep generic HTTP status when the response is not JSON.
+        }
+        throw new Error(details);
+    }
+    return response.json();
+}
+
+async function fetchActionExecution(executionId) {
+    const response = await fetch(`/api/action-executions/${executionId}`);
+    if (!response.ok) {
+        let details = `Execution detail failed: ${response.status}`;
+        try {
+            const payload = await response.json();
+            details = formatApiErrorDetail(payload, details);
+        } catch (_) {
+            // Keep generic HTTP status when the response is not JSON.
+        }
+        throw new Error(details);
+    }
+    return response.json();
+}
+
+function copyTextToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+        const area = document.createElement("textarea");
+        area.value = text;
+        area.setAttribute("readonly", "readonly");
+        area.style.position = "fixed";
+        area.style.left = "-9999px";
+        document.body.append(area);
+        area.select();
+        try {
+            const copied = document.execCommand("copy");
+            area.remove();
+            copied ? resolve() : reject(new Error("copy failed"));
+        } catch (error) {
+            area.remove();
+            reject(error);
+        }
+    });
+}
+
+function appendExecutionPre(parent, label, text, copyLabel) {
+    const title = document.createElement("div");
+    title.className = "readiness-label";
+    title.textContent = label;
+
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "compact secondary";
+    copyButton.textContent = copyLabel;
+    copyButton.disabled = !text;
+    copyButton.addEventListener("click", async () => {
+        try {
+            await copyTextToClipboard(text || "");
+            copyButton.textContent = "Copied";
+            window.setTimeout(() => {
+                copyButton.textContent = copyLabel;
+            }, 1200);
+        } catch (_) {
+            copyButton.textContent = "Copy failed";
+        }
+    });
+
+    const pre = document.createElement("pre");
+    pre.textContent = text || "";
+    parent.append(title, copyButton, pre);
+}
+
+function renderExecutionResult(parent, execution) {
+    parent.replaceChildren();
+    const notice = document.createElement("div");
+    notice.className = "readiness-ready";
+    notice.textContent = "Executed over SSH as read-only approved action.";
+
+    const status = document.createElement("div");
+    status.className = execution.status === "completed" ? "readiness-ready" : "readiness-blocked";
+    status.textContent = `Status: ${execution.status}`;
+
+    const exitCode = document.createElement("div");
+    exitCode.className = "readiness-meta";
+    exitCode.textContent = `Exit code: ${execution.exit_code === null || execution.exit_code === undefined ? "none" : execution.exit_code}`;
+
+    const duration = document.createElement("div");
+    duration.className = "readiness-meta";
+    duration.textContent = `Duration: ${execution.duration_ms === null || execution.duration_ms === undefined ? "unknown" : `${execution.duration_ms} ms`}`;
+
+    parent.append(notice, status, exitCode, duration);
+    if (execution.error_category) {
+        const category = document.createElement("div");
+        category.className = "readiness-meta";
+        category.textContent = `Error category: ${execution.error_category}`;
+        parent.append(category);
+    }
+    if (execution.error) {
+        const error = document.createElement("div");
+        error.className = "readiness-blocked";
+        error.textContent = `Error: ${execution.error}`;
+        parent.append(error);
+    }
+    appendExecutionPre(parent, "stdout:", execution.stdout || "", "Copy stdout");
+    appendExecutionPre(parent, "stderr:", execution.stderr || "", "Copy stderr");
+    appendReadinessList(parent, "warnings:", execution.warnings || []);
+}
+
+function renderLatestExecutions(parent, runId) {
+    parent.replaceChildren();
+    const title = document.createElement("div");
+    title.className = "readiness-label";
+    title.textContent = "Latest executions";
+    parent.append(title);
+
+    const list = document.createElement("ul");
+    list.className = "readiness-list";
+    parent.append(list);
+
+    const detail = document.createElement("div");
+    detail.className = "readiness-result";
+    parent.append(detail);
+
+    fetchActionRunExecutions(runId)
+        .then((payload) => {
+            list.replaceChildren();
+            const items = payload.items || [];
+            if (!items.length) {
+                const empty = document.createElement("li");
+                empty.textContent = "none";
+                list.append(empty);
+                return;
+            }
+            for (const execution of items) {
+                const item = document.createElement("li");
+                const summary = document.createElement("span");
+                const exitText = execution.exit_code === null || execution.exit_code === undefined ? "" : ` exit=${execution.exit_code}`;
+                const durationText = execution.duration_ms === null || execution.duration_ms === undefined ? "" : ` ${execution.duration_ms}ms`;
+                summary.textContent = `#${execution.id} ${execution.status}${exitText}${durationText}`;
+
+                const viewButton = document.createElement("button");
+                viewButton.type = "button";
+                viewButton.className = "compact secondary";
+                viewButton.textContent = "View";
+                viewButton.addEventListener("click", async () => {
+                    detail.textContent = "Loading execution detail…";
+                    try {
+                        const executionDetail = await fetchActionExecution(execution.id);
+                        renderExecutionResult(detail, executionDetail);
+                    } catch (error) {
+                        detail.textContent = `Could not load execution detail: ${error.message}`;
+                    }
+                });
+
+                item.append(summary, viewButton);
+                list.append(item);
+            }
+        })
+        .catch((error) => {
+            list.replaceChildren();
+            const item = document.createElement("li");
+            item.textContent = `Could not load latest executions: ${error.message}`;
+            list.append(item);
+        });
 }
 
 function appendReadinessList(parent, label, items) {
@@ -96,16 +301,16 @@ function appendReadinessList(parent, label, items) {
     parent.append(list);
 }
 
-function renderReadinessPreview(parent, readiness) {
+function renderReadinessPreview(parent, readiness, runId = null) {
     parent.replaceChildren();
 
     const ready = document.createElement("div");
     ready.className = readiness.ready ? "readiness-ready" : "readiness-blocked";
-    ready.textContent = `Ready for future executor: ${readiness.ready ? "yes" : "no"}`;
+    ready.textContent = `Ready for read-only SSH check: ${readiness.ready ? "yes" : "no"}`;
 
     const execution = document.createElement("div");
-    execution.className = "execution-disabled";
-    execution.textContent = readiness.execution_enabled ? "Execution enabled" : "Execution disabled in Stage 13";
+    execution.className = readiness.ready ? "readiness-ready" : "execution-disabled";
+    execution.textContent = readiness.ready ? "Stage 14 SSH agent execution is available for this approved read-only run." : "Read-only SSH check unavailable until readiness blockers are resolved.";
 
     const commandLabel = document.createElement("div");
     commandLabel.className = "readiness-label";
@@ -124,6 +329,45 @@ function renderReadinessPreview(parent, readiness) {
     parent.append(ready, execution, commandLabel, command, host, sshProfile);
     appendReadinessList(parent, "blockers:", readiness.blockers || []);
     appendReadinessList(parent, "warnings:", readiness.warnings || []);
+
+    let latestExecutions = null;
+    if (runId) {
+        latestExecutions = document.createElement("div");
+        latestExecutions.className = "readiness-result";
+        renderLatestExecutions(latestExecutions, runId);
+    }
+
+    if (readiness.ready && runId) {
+        const executionResult = document.createElement("div");
+        executionResult.className = "readiness-result";
+        executionResult.hidden = true;
+
+        const runButton = document.createElement("button");
+        runButton.type = "button";
+        runButton.className = "compact";
+        runButton.textContent = "Run read-only SSH check";
+        runButton.addEventListener("click", async () => {
+            const operator = promptActionRunOperator();
+            if (!operator) return;
+            runButton.disabled = true;
+            executionResult.hidden = false;
+            executionResult.textContent = "Running read-only SSH check…";
+            try {
+                const executionPayload = await postActionRunExecution(runId, operator);
+                renderExecutionResult(executionResult, executionPayload);
+                if (latestExecutions) renderLatestExecutions(latestExecutions, runId);
+                if (preparedRunsStatus) {
+                    preparedRunsStatus.textContent = `Prepared runs: latest #${runId} read-only SSH check finished with status ${executionPayload.status}.`;
+                }
+            } catch (error) {
+                executionResult.textContent = `Could not run read-only SSH check: ${error.message}`;
+            } finally {
+                runButton.disabled = false;
+            }
+        });
+        parent.append(runButton, executionResult);
+    }
+    if (latestExecutions) parent.append(latestExecutions);
 }
 
 function promptActionRunOperator() {
@@ -190,7 +434,7 @@ function renderPreparedRunResult(result, run) {
             approvedTitle.textContent = `Approved run #${approved.id}`;
             const warning = document.createElement("div");
             warning.className = "execution-disabled";
-            warning.textContent = "Approval is metadata only. No command was executed.";
+            warning.textContent = "Approved run can be checked for Stage 14 read-only SSH readiness.";
             const readinessResult = document.createElement("div");
             readinessResult.className = "readiness-result";
             readinessResult.hidden = true;
@@ -205,9 +449,9 @@ function renderPreparedRunResult(result, run) {
                 readinessResult.textContent = "Checking readiness…";
                 try {
                     const readiness = await fetchActionRunReadiness(approved.id);
-                    renderReadinessPreview(readinessResult, readiness);
+                    renderReadinessPreview(readinessResult, readiness, approved.id);
                     if (preparedRunsStatus) {
-                        preparedRunsStatus.textContent = `Prepared runs: latest #${approved.id} readiness checked. No command was executed.`;
+                        preparedRunsStatus.textContent = `Prepared runs: latest #${approved.id} readiness checked.`;
                     }
                 } catch (error) {
                     readinessResult.textContent = `Could not check readiness: ${error.message}`;
@@ -345,7 +589,7 @@ function renderActionCards(actions) {
                     let details = `Prepare failed: ${response.status}`;
                     try {
                         const payload = await response.json();
-                        if (payload.detail) details = Array.isArray(payload.detail) ? JSON.stringify(payload.detail) : payload.detail;
+                        details = formatApiErrorDetail(payload, details);
                     } catch (_) {
                         // Keep generic HTTP status when the response is not JSON.
                     }
@@ -520,7 +764,7 @@ async function loadHosts() {
     if (!response.ok) throw new Error(`Hosts failed: ${response.status}`);
     const data = await response.json();
     renderHosts(data.items || []);
-    if (hostsStatus) hostsStatus.textContent = "Inventory only. No SSH connection is performed in this stage.";
+    if (hostsStatus) hostsStatus.textContent = "Inventory only. SSH runs only from approved read-only ActionRuns.";
     return data;
 }
 
@@ -543,7 +787,7 @@ async function createHostFromPrompt() {
             let details = `Create host failed: ${response.status}`;
             try {
                 const payload = await response.json();
-                if (payload.detail) details = Array.isArray(payload.detail) ? JSON.stringify(payload.detail) : payload.detail;
+                details = formatApiErrorDetail(payload, details);
             } catch (_) {
                 // Keep generic status if response is not JSON.
             }
