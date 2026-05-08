@@ -168,3 +168,26 @@ def test_token_like_password_ref_rejected():
             },
         )
     assert response.status_code == 422
+
+
+def test_create_host_without_profile_then_assign_agent_profile():
+    with TestClient(app) as client:
+        profile = _create_profile(client, "assign-agent-profile")
+        host = _create_host(client, "assign-agent-host")
+        assert host["ssh_profile_id"] is None
+
+        patch_response = client.patch(f"/api/hosts/{host['id']}", json={"ssh_profile_id": profile["id"]})
+        assert patch_response.status_code == 200
+        assert patch_response.json()["ssh_profile_id"] == profile["id"]
+
+        list_response = client.get("/api/hosts")
+        assert list_response.status_code == 200
+        listed = [item for item in list_response.json()["items"] if item["id"] == host["id"]]
+        assert listed[0]["ssh_profile_id"] == profile["id"]
+
+
+def test_patch_host_with_invalid_ssh_profile_id_is_rejected():
+    with TestClient(app) as client:
+        host = _create_host(client, "invalid-profile-host")
+        response = client.patch(f"/api/hosts/{host['id']}", json={"ssh_profile_id": 999999})
+    assert response.status_code == 422

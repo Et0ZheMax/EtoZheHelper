@@ -29,6 +29,13 @@
             <p id="hosts-status" class="muted small" aria-live="polite">Inventory only. SSH runs only from approved read-only ActionRuns.</p>
         </section>
 
+        <section class="ssh-profiles-panel">
+            <h2>SSH Profiles</h2>
+            <button id="new-ssh-profile-button" class="secondary" type="button">+ Add agent profile</button>
+            <div id="ssh-profiles-list" class="ssh-profiles-list empty">No SSH profiles yet.</div>
+            <p id="ssh-profiles-status" class="muted small" aria-live="polite">Agent profiles do not store secrets. The key must be available in the OS ssh-agent for this Windows/Linux user.</p>
+        </section>
+
         <section class="kb-controls">
             <h2>KB Browser</h2>
             <label for="kb-search-input">Search KB</label>
@@ -89,13 +96,14 @@
 
         <div class="safety">
             <h2>Безопасность</h2>
-            <div class="safety-mode">MVP safety mode: no remote execution</div>
+            <div class="safety-mode">Safety mode: approved read-only SSH checks only.</div>
             <ul>
                 <li>Не вставляй пароли.</li>
                 <li>Не вставляй токены, cookies и ключи.</li>
                 <li>Обезличивай IP, домены, логины и ФИО.</li>
                 <li>Можно вставлять вывод команд, но сначала убери секреты, токены, домены, IP, ФИО.</li>
-                <li>MVP ничего не выполняет на серверах.</li>
+                <li>Приложение выполняет только approved read-only ActionRuns через SSH agent.</li>
+                <li>Произвольные команды, sudo, write/remediation и shell-доступ не поддерживаются.</li>
             </ul>
         </div>
     </aside>

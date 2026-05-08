@@ -381,20 +381,20 @@ button.compact.danger:hover { background: #fee2e2; }
     font-size: 12px;
     font-weight: 800;
 }
-.hosts-panel {
+.hosts-panel, .ssh-profiles-panel {
     display: grid;
     gap: 10px;
     margin-top: 18px;
     padding-top: 18px;
     border-top: 1px solid var(--border);
 }
-.hosts-list {
+.hosts-list, .ssh-profiles-list {
     display: grid;
     gap: 8px;
     max-height: 28vh;
     overflow-y: auto;
 }
-.host-item {
+.host-item, .ssh-profile-item {
     display: grid;
     gap: 5px;
     width: 100%;
@@ -406,7 +406,7 @@ button.compact.danger:hover { background: #fee2e2; }
     color: var(--text);
     text-align: left;
 }
-.host-item:hover, .host-item:focus {
+.host-item:hover, .host-item:focus-within, .ssh-profile-item:hover {
     border-color: var(--accent);
     background: #eef4ff;
     outline: none;
@@ -415,17 +415,30 @@ button.compact.danger:hover { background: #fee2e2; }
     border-color: var(--accent);
     background: var(--user);
 }
-.host-title {
+.host-title, .ssh-profile-title {
     font-weight: 800;
     overflow-wrap: anywhere;
 }
-.host-meta, .target-host-context {
+.host-meta, .ssh-profile-meta, .target-host-context {
     color: var(--muted);
     font-size: 12px;
     line-height: 1.35;
 }
 .target-host-context {
     font-weight: 700;
+}
+.host-controls {
+    display: grid;
+    gap: 6px;
+    margin-top: 4px;
+}
+.host-controls select {
+    min-height: 34px;
+    padding: 7px 10px;
+    font-size: 13px;
+}
+.host-controls button.compact, .host-controls button.compact.secondary {
+    width: fit-content;
 }
 .prepare-run-button {
     width: fit-content;
