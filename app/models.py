@@ -111,6 +111,42 @@ class ActionRun(Base):
         return False
 
 
+ACTION_EXECUTION_STATUSES = {"running", "completed", "failed", "timed_out", "blocked"}
+
+
+class ActionExecution(Base):
+    __tablename__ = "action_executions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("action_runs.id"), index=True)
+    host_id: Mapped[int | None] = mapped_column(ForeignKey("hosts.id"), nullable=True, index=True)
+    ssh_profile_id: Mapped[int | None] = mapped_column(ForeignKey("ssh_profiles.id"), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(100), index=True)
+    command_preview: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="running", index=True)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stdout: Mapped[str] = mapped_column(Text, default="")
+    stderr: Mapped[str] = mapped_column(Text, default="")
+    stdout_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    stderr_truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime] = mapped_column(default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    warnings_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    run: Mapped[ActionRun] = relationship()
+    host: Mapped[Host | None] = relationship()
+    ssh_profile: Mapped[SshProfile | None] = relationship()
+
+    @validates("status")
+    def validate_status(self, key: str, value: str) -> str:
+        if value not in ACTION_EXECUTION_STATUSES:
+            raise ValueError("Unsupported action execution status")
+        return value
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 

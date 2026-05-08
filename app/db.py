@@ -74,12 +74,45 @@ def _ensure_sqlite_action_runs_columns() -> None:
                 connection.execute(text(statement))
 
 
+def _ensure_sqlite_action_executions_columns() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+    inspector = inspect(engine)
+    if "action_executions" not in inspector.get_table_names():
+        return
+    column_names = {column["name"] for column in inspector.get_columns("action_executions")}
+    migrations = {
+        "run_id": "ALTER TABLE action_executions ADD COLUMN run_id INTEGER DEFAULT 0 NOT NULL",
+        "host_id": "ALTER TABLE action_executions ADD COLUMN host_id INTEGER",
+        "ssh_profile_id": "ALTER TABLE action_executions ADD COLUMN ssh_profile_id INTEGER",
+        "action": "ALTER TABLE action_executions ADD COLUMN action VARCHAR(100) DEFAULT '' NOT NULL",
+        "command_preview": "ALTER TABLE action_executions ADD COLUMN command_preview TEXT DEFAULT '' NOT NULL",
+        "status": "ALTER TABLE action_executions ADD COLUMN status VARCHAR(32) DEFAULT 'running' NOT NULL",
+        "exit_code": "ALTER TABLE action_executions ADD COLUMN exit_code INTEGER",
+        "stdout": "ALTER TABLE action_executions ADD COLUMN stdout TEXT DEFAULT '' NOT NULL",
+        "stderr": "ALTER TABLE action_executions ADD COLUMN stderr TEXT DEFAULT '' NOT NULL",
+        "stdout_truncated": "ALTER TABLE action_executions ADD COLUMN stdout_truncated BOOLEAN DEFAULT 0 NOT NULL",
+        "stderr_truncated": "ALTER TABLE action_executions ADD COLUMN stderr_truncated BOOLEAN DEFAULT 0 NOT NULL",
+        "started_at": "ALTER TABLE action_executions ADD COLUMN started_at DATETIME",
+        "finished_at": "ALTER TABLE action_executions ADD COLUMN finished_at DATETIME",
+        "duration_ms": "ALTER TABLE action_executions ADD COLUMN duration_ms INTEGER",
+        "error": "ALTER TABLE action_executions ADD COLUMN error TEXT",
+        "error_category": "ALTER TABLE action_executions ADD COLUMN error_category VARCHAR(64)",
+        "warnings_json": "ALTER TABLE action_executions ADD COLUMN warnings_json TEXT DEFAULT '[]' NOT NULL",
+    }
+    with engine.begin() as connection:
+        for column_name, statement in migrations.items():
+            if column_name not in column_names:
+                connection.execute(text(statement))
+
+
 def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_chat_session_host_id()
     _ensure_sqlite_action_runs_columns()
+    _ensure_sqlite_action_executions_columns()
 
 
 def get_db() -> Generator[Session, None, None]:

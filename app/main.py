@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
+from app.api.action_executions import router as action_executions_router
 from app.api.action_runs import router as action_runs_router
 from app.api.actions import router as actions_router
 from app.api.chat import router as api_router
@@ -31,5 +32,6 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(api_router, prefix="/api")
 app.include_router(actions_router, prefix="/api")
 app.include_router(action_runs_router, prefix="/api")
+app.include_router(action_executions_router, prefix="/api")
 app.include_router(hosts_router, prefix="/api")
 app.include_router(web_router)

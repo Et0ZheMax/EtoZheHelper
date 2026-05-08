@@ -104,7 +104,7 @@ def test_approved_run_with_enabled_linux_host_and_agent_profile_is_ready():
     assert payload["blockers"] == []
     assert payload["host"]["name"] == data["host"]["name"]
     assert payload["ssh_profile"]["auth_type"] == "agent"
-    assert "Stage 13 does not connect over SSH and does not execute commands." in payload["warnings"]
+    assert "Readiness checks metadata only; SSH execution requires the separate approved read-only Stage 14 execute endpoint." in payload["warnings"]
 
 
 def test_prepared_but_not_approved_run_is_not_ready():
@@ -233,8 +233,8 @@ def test_unknown_run_returns_404():
     assert response.status_code == 404
 
 
-def test_no_ssh_or_process_execution_code_is_introduced():
+def test_readiness_resolver_does_not_use_ssh_or_process_execution_code():
     forbidden = ("paramiko", "asyncssh", "fabric", "subprocess", "os.system", "socket", "ping")
-    for path in Path("app/execution").glob("*.py"):
+    for path in [Path("app/execution/resolver.py"), Path("app/execution/models.py")]:
         text = path.read_text(encoding="utf-8").casefold()
         assert not any(term in text for term in forbidden), path
