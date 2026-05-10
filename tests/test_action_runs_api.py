@@ -427,13 +427,26 @@ def test_prepare_unsafe_params_rejected_by_policy():
     assert response.status_code == 422
 
 
-def test_no_ssh_subprocess_execution_code_is_introduced():
-    forbidden = ["subprocess", "paramiko", "asyncssh", "os.system", "Popen"]
+def test_no_unsafe_local_process_execution_code_is_introduced():
+    forbidden = ["subprocess", "asyncssh", "os.system", "Popen", "shell=True"]
     app_files = Path("app").rglob("*.py")
     matches = []
+
     for path in app_files:
         text = path.read_text(encoding="utf-8")
         lowered = text.casefold()
         matches.extend(f"{path}:{term}" for term in forbidden if term.casefold() in lowered)
+
+    assert matches == []
+
+
+def test_paramiko_is_only_used_in_ssh_client_adapter():
+    allowed = Path("app/execution/ssh_client.py")
+    matches = []
+
+    for path in Path("app").rglob("*.py"):
+        text = path.read_text(encoding="utf-8").casefold()
+        if "paramiko" in text and path != allowed:
+            matches.append(str(path))
 
     assert matches == []

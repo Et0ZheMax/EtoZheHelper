@@ -3,6 +3,7 @@ let currentSessionTitle = "";
 let selectedHostId = null;
 let selectedHostName = "";
 let hostsById = new Map();
+let sshProfilesById = new Map();
 
 const form = document.querySelector("#chat-form");
 const input = document.querySelector("#message-input");
@@ -24,6 +25,9 @@ const preparedRunsStatus = document.querySelector("#prepared-runs-status");
 const newHostButton = document.querySelector("#new-host-button");
 const hostsList = document.querySelector("#hosts-list");
 const hostsStatus = document.querySelector("#hosts-status");
+const newSshProfileButton = document.querySelector("#new-ssh-profile-button");
+const sshProfilesList = document.querySelector("#ssh-profiles-list");
+const sshProfilesStatus = document.querySelector("#ssh-profiles-status");
 const kbSearchInput = document.querySelector("#kb-search-input");
 const kbDomainFilter = document.querySelector("#kb-domain-filter");
 const kbTypeFilter = document.querySelector("#kb-type-filter");
@@ -373,6 +377,25 @@ function renderLatestExecutions(parent, runId) {
         });
 }
 
+function readinessHelperMessages(blockers) {
+    const values = Array.isArray(blockers) ? blockers : [];
+    const helpers = [];
+    if (values.some((item) => String(item).includes("Host has no SSH profile assigned"))) {
+        helpers.push("Assign an SSH profile to this host in the Hosts panel, then prepare/approve/check readiness again.");
+    }
+    const incompatibleProfileFragments = [
+        "Manual auth is not executable",
+        "Key auth execution is not implemented",
+        "Password auth execution is not implemented",
+        "Interactive sudo prompt is not supported",
+        "NOPASSWD limited sudo execution is not implemented",
+    ];
+    if (values.some((item) => incompatibleProfileFragments.some((fragment) => String(item).includes(fragment)))) {
+        helpers.push("Stage 14/15 can execute only agent auth with sudo_mode=none. Edit or assign a compatible SSH profile.");
+    }
+    return helpers;
+}
+
 function appendReadinessList(parent, label, items) {
     const title = document.createElement("div");
     title.className = "readiness-label";
@@ -417,6 +440,10 @@ function renderReadinessPreview(parent, readiness, runId = null) {
 
     parent.append(ready, execution, commandLabel, command, host, sshProfile);
     appendReadinessList(parent, "blockers:", readiness.blockers || []);
+    const helpers = readinessHelperMessages(readiness.blockers || []);
+    if (helpers.length) {
+        appendReadinessList(parent, "how to fix:", helpers);
+    }
     appendReadinessList(parent, "warnings:", readiness.warnings || []);
 
     let latestExecutions = null;
@@ -494,7 +521,7 @@ function renderPreparedRunResult(result, run) {
     command.textContent = run.command_preview || "";
     const execution = document.createElement("div");
     execution.className = "execution-disabled";
-    execution.textContent = "Execution disabled";
+    execution.textContent = "Approval required before read-only SSH readiness";
 
     const controls = document.createElement("div");
     controls.className = "approval-controls";
@@ -639,7 +666,7 @@ function renderActionCards(actions) {
 
         const disabled = document.createElement("div");
         disabled.className = "execution-disabled";
-        disabled.textContent = "Execution disabled";
+        disabled.textContent = "Approval required before read-only SSH readiness";
 
         const prepareButton = document.createElement("button");
         prepareButton.type = "button";
@@ -650,8 +677,8 @@ function renderActionCards(actions) {
         const prepareHelper = document.createElement("div");
         prepareHelper.className = "muted small prepare-helper";
         prepareHelper.textContent = selectedHostName
-            ? `Prepare an auditable dry-run for ${selectedHostName}. No SSH will be performed.`
-            : "Select a host to prepare an auditable dry-run. No SSH will be performed.";
+            ? `Prepare an approved read-only ActionRun for ${selectedHostName}. No SSH connection is made during preparation.`
+            : "Select a host to prepare an approved read-only ActionRun. No SSH connection is made during preparation.";
 
         const result = document.createElement("div");
         result.className = "prepared-run-result";
@@ -662,7 +689,7 @@ function renderActionCards(actions) {
             prepareButton.disabled = true;
             prepareButton.textContent = "Preparing…";
             result.hidden = false;
-            result.textContent = "Preparing dry-run…";
+            result.textContent = "Preparing read-only ActionRun preview…";
             try {
                 const response = await fetch("/api/action-runs/prepare", {
                     method: "POST",
@@ -748,8 +775,8 @@ function updateActionPrepareControls() {
     }
     for (const helper of document.querySelectorAll(".prepare-helper")) {
         helper.textContent = selectedHostName
-            ? `Prepare an auditable dry-run for ${selectedHostName}. No SSH will be performed.`
-            : "Select a host to prepare an auditable dry-run. No SSH will be performed.";
+            ? `Prepare an approved read-only ActionRun for ${selectedHostName}. No SSH connection is made during preparation.`
+            : "Select a host to prepare an approved read-only ActionRun. No SSH connection is made during preparation.";
     }
     for (const item of document.querySelectorAll(".target-host-context")) {
         item.textContent = selectedHostName ? `Target host context: ${selectedHostName}` : "Target host context: none";
@@ -804,6 +831,121 @@ async function restoreSessionHost(hostId) {
     setSelectedHost(hostsById.get(hostId) || null);
 }
 
+function profileDisplayName(profileId) {
+    if (!profileId) return "none";
+    const profile = sshProfilesById.get(profileId);
+    return profile ? profile.name : `#${profileId}`;
+}
+
+function renderSshProfiles(items) {
+    if (!sshProfilesList) return;
+    sshProfilesById = new Map((items || []).map((profile) => [profile.id, profile]));
+    sshProfilesList.replaceChildren();
+    sshProfilesList.classList.remove("empty");
+    if (!items.length) {
+        sshProfilesList.classList.add("empty");
+        sshProfilesList.textContent = "No SSH profiles yet.";
+        return;
+    }
+    for (const profile of items) {
+        const card = document.createElement("article");
+        card.className = "ssh-profile-item";
+
+        const title = document.createElement("span");
+        title.className = "ssh-profile-title";
+        title.textContent = profile.name;
+
+        const user = document.createElement("span");
+        user.className = "ssh-profile-meta";
+        user.textContent = `user: ${profile.username}`;
+
+        const auth = document.createElement("span");
+        auth.className = "ssh-profile-meta";
+        auth.textContent = `auth: ${profile.auth_type}`;
+
+        const sudo = document.createElement("span");
+        sudo.className = "ssh-profile-meta";
+        sudo.textContent = `sudo: ${profile.sudo_mode}`;
+
+        const id = document.createElement("span");
+        id.className = "ssh-profile-meta";
+        id.textContent = `id: ${profile.id}`;
+
+        card.append(title, user, auth, sudo, id);
+        sshProfilesList.append(card);
+    }
+}
+
+async function loadSshProfiles() {
+    if (!sshProfilesList) return null;
+    const response = await fetch("/api/ssh-profiles?limit=50&offset=0");
+    if (!response.ok) throw new Error(`SSH profiles failed: ${response.status}`);
+    const data = await response.json();
+    renderSshProfiles(data.items || []);
+    if (sshProfilesStatus) {
+        sshProfilesStatus.textContent = "Agent profiles do not store secrets. The key must be available in the OS ssh-agent for this Windows/Linux user.";
+    }
+    return data;
+}
+
+async function createSshProfileFromPrompt() {
+    if (!newSshProfileButton) return;
+    const name = prompt("Profile name, e.g. support-agent");
+    if (name === null) return;
+    const username = prompt("SSH username, e.g. support");
+    if (username === null) return;
+    newSshProfileButton.disabled = true;
+    try {
+        const response = await fetch("/api/ssh-profiles", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                name: name.trim(),
+                username: username.trim(),
+                auth_type: "agent",
+                sudo_mode: "none",
+            }),
+        });
+        if (!response.ok) {
+            let details = `Create SSH profile failed: ${response.status}`;
+            try {
+                const payload = await response.json();
+                details = formatApiErrorDetail(payload, details);
+            } catch (_) {
+                // Keep generic status if response is not JSON.
+            }
+            throw new Error(details);
+        }
+        const profile = await response.json();
+        await loadSshProfiles();
+        await loadHosts();
+        if (sshProfilesStatus) sshProfilesStatus.textContent = `Agent SSH profile added: ${profile.name}. No secrets were stored.`;
+    } catch (error) {
+        if (sshProfilesStatus) sshProfilesStatus.textContent = `Не удалось добавить SSH profile: ${error.message}`;
+    } finally {
+        newSshProfileButton.disabled = false;
+    }
+}
+
+async function assignSshProfileToHost(hostId, profileId) {
+    const response = await fetch(`/api/hosts/${hostId}`, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ssh_profile_id: Number(profileId)}),
+    });
+    if (!response.ok) {
+        let details = `Assign SSH profile failed: ${response.status}`;
+        try {
+            const payload = await response.json();
+            details = formatApiErrorDetail(payload, details);
+        } catch (_) {
+            // Keep generic status if response is not JSON.
+        }
+        throw new Error(details);
+    }
+    return response.json();
+}
+
 function renderHosts(items) {
     if (!hostsList) return;
     hostsById = new Map((items || []).map((host) => [host.id, host]));
@@ -819,12 +961,10 @@ function renderHosts(items) {
         setSelectedHost(null);
     }
     for (const host of items) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "host-item";
-        button.dataset.hostId = String(host.id);
-        button.classList.toggle("active", host.id === selectedHostId);
-        button.addEventListener("click", () => selectHost(host));
+        const card = document.createElement("article");
+        card.className = "host-item";
+        card.dataset.hostId = String(host.id);
+        card.classList.toggle("active", host.id === selectedHostId);
 
         const title = document.createElement("span");
         title.className = "host-title";
@@ -842,13 +982,74 @@ function renderHosts(items) {
         status.className = "host-meta";
         status.textContent = host.enabled ? "enabled" : "disabled";
 
-        button.append(title, endpoint, tags, status);
-        hostsList.appendChild(button);
+        const profile = document.createElement("span");
+        profile.className = "host-meta";
+        profile.textContent = `ssh profile: ${profileDisplayName(host.ssh_profile_id)}`;
+
+        const controls = document.createElement("div");
+        controls.className = "host-controls";
+
+        const selectButton = document.createElement("button");
+        selectButton.type = "button";
+        selectButton.className = "compact";
+        selectButton.textContent = host.id === selectedHostId ? "Selected" : "Select host";
+        selectButton.addEventListener("click", () => selectHost(host));
+
+        const profileSelect = document.createElement("select");
+        profileSelect.setAttribute("aria-label", `SSH profile for ${host.name}`);
+        profileSelect.disabled = sshProfilesById.size === 0;
+
+        const emptyOption = document.createElement("option");
+        emptyOption.value = "";
+        emptyOption.textContent = sshProfilesById.size ? "Choose SSH profile" : "Create profile first";
+        profileSelect.append(emptyOption);
+        for (const profileItem of sshProfilesById.values()) {
+            const option = document.createElement("option");
+            option.value = String(profileItem.id);
+            option.textContent = `${profileItem.name} (${profileItem.username}, agent/none)`;
+            option.selected = profileItem.id === host.ssh_profile_id;
+            profileSelect.append(option);
+        }
+
+        const assignButton = document.createElement("button");
+        assignButton.type = "button";
+        assignButton.className = "compact secondary";
+        assignButton.textContent = "Assign SSH profile";
+        assignButton.disabled = sshProfilesById.size === 0;
+        assignButton.addEventListener("click", async () => {
+            if (!sshProfilesById.size) {
+                if (hostsStatus) hostsStatus.textContent = "Create an agent SSH profile first.";
+                return;
+            }
+            const value = profileSelect.value;
+            if (!value) {
+                if (hostsStatus) hostsStatus.textContent = "Choose an SSH profile to assign.";
+                return;
+            }
+            assignButton.disabled = true;
+            try {
+                const updated = await assignSshProfileToHost(host.id, value);
+                await loadHosts();
+                if (selectedHostId === updated.id) setSelectedHost(updated);
+                if (hostsStatus) hostsStatus.textContent = "SSH profile assigned to host. No SSH connection was performed.";
+            } catch (error) {
+                if (hostsStatus) hostsStatus.textContent = `Не удалось назначить SSH profile: ${error.message}`;
+            } finally {
+                assignButton.disabled = false;
+            }
+        });
+
+        controls.append(selectButton, profileSelect, assignButton);
+        card.append(title, endpoint, tags, status, profile, controls);
+        hostsList.appendChild(card);
     }
 }
 
 async function loadHosts() {
     if (!hostsList) return null;
+    if (sshProfilesList && sshProfilesById.size === 0) {
+        await loadSshProfiles();
+    }
     const response = await fetch("/api/hosts?limit=50&offset=0");
     if (!response.ok) throw new Error(`Hosts failed: ${response.status}`);
     const data = await response.json();
@@ -1212,6 +1413,7 @@ newSessionButton?.addEventListener("click", createNewSession);
 renameSessionButton?.addEventListener("click", renameCurrentSession);
 deleteSessionButton?.addEventListener("click", deleteCurrentSession);
 newHostButton?.addEventListener("click", createHostFromPrompt);
+newSshProfileButton?.addEventListener("click", createSshProfileFromPrompt);
 
 kbSearchButton?.addEventListener("click", searchKbDocuments);
 for (const searchField of [kbSearchInput, kbTagFilter]) {
@@ -1293,6 +1495,7 @@ loadSessions({openNewest: true}).catch((error) => {
     sessionsList.textContent = `Не удалось загрузить историю: ${error.message}`;
 });
 
-loadHosts().catch((error) => {
+loadSshProfiles().then(() => loadHosts()).catch((error) => {
+    if (sshProfilesList) sshProfilesList.textContent = `Не удалось загрузить SSH profiles: ${error.message}`;
     if (hostsList) hostsList.textContent = `Не удалось загрузить hosts: ${error.message}`;
 });
