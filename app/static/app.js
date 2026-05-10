@@ -99,6 +99,44 @@ async function postActionRunExecution(runId, operator) {
     return response.json();
 }
 
+async function postActionExecutionAttach(executionId, operator, note, includeStdout = false) {
+    const response = await fetch(`/api/action-executions/${executionId}/attach`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({operator, note, include_stdout: includeStdout}),
+    });
+    if (!response.ok) {
+        let details = `Attach to chat failed: ${response.status}`;
+        try {
+            const payload = await response.json();
+            details = formatApiErrorDetail(payload, details);
+        } catch (_) {
+            // Keep generic HTTP status when the response is not JSON.
+        }
+        throw new Error(details);
+    }
+    return response.json();
+}
+
+async function postActionExecutionAnalyze(executionId, operator, note) {
+    const response = await fetch(`/api/action-executions/${executionId}/analyze`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({operator, note}),
+    });
+    if (!response.ok) {
+        let details = `Analyze output failed: ${response.status}`;
+        try {
+            const payload = await response.json();
+            details = formatApiErrorDetail(payload, details);
+        } catch (_) {
+            // Keep generic HTTP status when the response is not JSON.
+        }
+        throw new Error(details);
+    }
+    return response.json();
+}
+
 async function fetchActionRunReadiness(runId) {
     const response = await fetch(`/api/action-runs/${runId}/readiness`);
     if (!response.ok) {
@@ -281,6 +319,22 @@ function renderExecutionAnalysis(parent, execution) {
     parent.append(block);
 }
 
+function appendExecutionActionStatus(parent, text, className = "readiness-meta") {
+    const status = document.createElement("div");
+    status.className = className;
+    status.textContent = text;
+    parent.append(status);
+    return status;
+}
+
+async function reloadCurrentSessionMessagesIfNeeded(targetSessionId) {
+    if (targetSessionId && sessionId && Number(targetSessionId) === Number(sessionId)) {
+        await openSession(sessionId);
+    } else {
+        await loadSessions();
+    }
+}
+
 function renderExecutionResult(parent, execution) {
     parent.replaceChildren();
     const notice = document.createElement("div");
@@ -299,7 +353,27 @@ function renderExecutionResult(parent, execution) {
     duration.className = "readiness-meta";
     duration.textContent = `Duration: ${execution.duration_ms === null || execution.duration_ms === undefined ? "unknown" : `${execution.duration_ms} ms`}`;
 
-    parent.append(notice, status, exitCode, duration);
+    const host = document.createElement("div");
+    host.className = "readiness-meta";
+    host.textContent = `Host: ${execution.host_name || execution.host_id || "unknown"}`;
+
+    const action = document.createElement("div");
+    action.className = "readiness-meta";
+    action.textContent = `Action: ${execution.action || "unknown"}`;
+
+    const commandLabel = document.createElement("div");
+    commandLabel.className = "readiness-label";
+    commandLabel.textContent = "command preview:";
+    const command = document.createElement("code");
+    command.textContent = execution.command_preview || "";
+
+    parent.append(notice, status, host, action, duration, exitCode, commandLabel, command);
+    if (!execution.session_id) {
+        const unlinked = document.createElement("div");
+        unlinked.className = "readiness-blocked";
+        unlinked.textContent = "This execution is not linked to an investigation session, so it cannot be attached to chat.";
+        parent.append(unlinked);
+    }
     if (execution.error_category) {
         const category = document.createElement("div");
         category.className = "readiness-meta";
@@ -312,8 +386,94 @@ function renderExecutionResult(parent, execution) {
         error.textContent = `Error: ${execution.error}`;
         parent.append(error);
     }
-    appendExecutionPre(parent, "stdout:", execution.stdout || "", "Copy stdout");
-    appendExecutionPre(parent, "stderr:", execution.stderr || "", "Copy stderr");
+    const controls = document.createElement("div");
+    controls.className = "execution-controls";
+
+    const attachButton = document.createElement("button");
+    attachButton.type = "button";
+    attachButton.className = "compact";
+    attachButton.textContent = "Attach to chat";
+    attachButton.disabled = !execution.session_id;
+    attachButton.addEventListener("click", async () => {
+        const operator = promptActionRunOperator();
+        if (!operator) return;
+        const note = promptActionRunNote("Optional note for attached execution");
+        if (note === null) return;
+        attachButton.disabled = true;
+        try {
+            const payload = await postActionExecutionAttach(execution.id, operator, note, false);
+            appendExecutionActionStatus(parent, "Execution result attached to chat.", "readiness-ready");
+            await reloadCurrentSessionMessagesIfNeeded(payload.session_id);
+        } catch (error) {
+            appendExecutionActionStatus(parent, `Could not attach execution: ${error.message}`, "readiness-blocked");
+        } finally {
+            attachButton.disabled = !execution.session_id;
+        }
+    });
+
+    const analyzeButton = document.createElement("button");
+    analyzeButton.type = "button";
+    analyzeButton.className = "compact";
+    analyzeButton.textContent = "Analyze output";
+    analyzeButton.disabled = !execution.session_id;
+    analyzeButton.addEventListener("click", async () => {
+        const operator = promptActionRunOperator();
+        if (!operator) return;
+        const note = promptActionRunNote("Optional note for output analysis");
+        if (note === null) return;
+        analyzeButton.disabled = true;
+        try {
+            const payload = await postActionExecutionAnalyze(execution.id, operator, note);
+            appendExecutionActionStatus(parent, "Execution output analyzed and saved to chat.", "readiness-ready");
+            await reloadCurrentSessionMessagesIfNeeded(payload.session_id);
+        } catch (error) {
+            appendExecutionActionStatus(parent, `Could not analyze execution: ${error.message}`, "readiness-blocked");
+        } finally {
+            analyzeButton.disabled = !execution.session_id;
+        }
+    });
+
+    const copyStdoutButton = document.createElement("button");
+    copyStdoutButton.type = "button";
+    copyStdoutButton.className = "compact secondary";
+    copyStdoutButton.textContent = "Copy stdout";
+    copyStdoutButton.disabled = !execution.stdout;
+    copyStdoutButton.addEventListener("click", async () => {
+        try {
+            await copyTextToClipboard(execution.stdout || "");
+            copyStdoutButton.textContent = "Copied";
+            window.setTimeout(() => { copyStdoutButton.textContent = "Copy stdout"; }, 1200);
+        } catch (_) {
+            copyStdoutButton.textContent = "Copy failed";
+        }
+    });
+
+    const rawButton = document.createElement("button");
+    rawButton.type = "button";
+    rawButton.className = "compact secondary";
+    rawButton.textContent = "View raw";
+
+    controls.append(analyzeButton, attachButton, copyStdoutButton, rawButton);
+    parent.append(controls);
+
+    const raw = document.createElement("div");
+    raw.className = "execution-raw";
+    raw.hidden = true;
+    if (!execution.stdout && !execution.stderr) {
+        const empty = document.createElement("div");
+        empty.className = "readiness-meta";
+        empty.textContent = "No stdout/stderr captured for this execution.";
+        raw.append(empty);
+    } else {
+        appendExecutionPre(raw, "stdout:", execution.stdout || "", "Copy stdout");
+        appendExecutionPre(raw, "stderr:", execution.stderr || "", "Copy stderr");
+    }
+    rawButton.addEventListener("click", () => {
+        raw.hidden = !raw.hidden;
+        rawButton.textContent = raw.hidden ? "View raw" : "Hide raw";
+    });
+    parent.append(raw);
+
     appendReadinessList(parent, "warnings:", execution.warnings || []);
     renderExecutionAnalysis(parent, execution);
 }

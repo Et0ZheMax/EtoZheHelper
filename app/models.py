@@ -138,6 +138,8 @@ class ActionExecution(Base):
     analysis_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     analysis_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     analysis_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    analysis_attached_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    chat_attached_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     run: Mapped[ActionRun] = relationship()
     host: Mapped[Host | None] = relationship()

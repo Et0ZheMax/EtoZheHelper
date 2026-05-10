@@ -287,7 +287,9 @@ class ActionRunExecuteRequest(BaseModel):
 class ActionExecutionResponse(BaseModel):
     id: int
     run_id: int
+    session_id: int | None = None
     host_id: int | None = None
+    host_name: str | None = None
     ssh_profile_id: int | None = None
     action: str
     command_preview: str
@@ -305,7 +307,74 @@ class ActionExecutionResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     analysis_status: str | None = None
     analysis_summary: str | None = None
+    analysis_attached_at: datetime | None = None
+    chat_attached_at: datetime | None = None
     analysis: dict[str, object] | None = None
+
+
+class ActionExecutionDetailResponse(ActionExecutionResponse):
+    pass
+
+
+class ActionExecutionAttachRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator: str = Field(min_length=1, max_length=80)
+    include_stdout: bool = False
+    note: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_secret_fields(cls, data: Any) -> Any:
+        return _reject_secret_extra_fields(data)
+
+    @field_validator("operator")
+    @classmethod
+    def validate_operator(cls, value: str) -> str:
+        return _validate_operator(value)
+
+    @field_validator("note")
+    @classmethod
+    def validate_note(cls, value: str | None) -> str | None:
+        return _validate_note(value)
+
+
+class ActionExecutionAttachResponse(BaseModel):
+    execution_id: int
+    session_id: int
+    message_id: int
+    chat_attached_at: datetime
+
+
+class ActionExecutionAnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operator: str = Field(min_length=1, max_length=80)
+    note: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_secret_fields(cls, data: Any) -> Any:
+        return _reject_secret_extra_fields(data)
+
+    @field_validator("operator")
+    @classmethod
+    def validate_operator(cls, value: str) -> str:
+        return _validate_operator(value)
+
+    @field_validator("note")
+    @classmethod
+    def validate_note(cls, value: str | None) -> str | None:
+        return _validate_note(value)
+
+
+class ActionExecutionAnalyzeResponse(BaseModel):
+    execution_id: int
+    session_id: int
+    message_id: int
+    analysis_attached_at: datetime
+    analysis_status: str | None = None
+    analysis_summary: str | None = None
 
 
 class ActionExecutionListResponse(BaseModel):
