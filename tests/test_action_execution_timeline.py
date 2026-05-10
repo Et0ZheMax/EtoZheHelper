@@ -121,6 +121,62 @@ def test_analyze_appends_assistant_message_updates_summary_and_audit():
         assert audit is not None
 
 
+def test_attach_persists_message_timestamp_and_audit_coherently():
+    execution_id = _fixture()
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/action-executions/{execution_id}/attach",
+            json={"operator": "max", "include_stdout": True},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    with SessionLocal() as db:
+        execution = db.get(ActionExecution, execution_id)
+        message = db.get(ChatMessage, payload["message_id"])
+        audit = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.event_type == "action_execution_attached",
+                AuditEvent.details.contains(f'"execution_id": {execution_id}'),
+            )
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+        assert execution.chat_attached_at is not None
+        assert message is not None
+        assert message.session_id == payload["session_id"]
+        assert audit is not None
+
+
+def test_analyze_persists_analysis_message_and_audit_coherently():
+    execution_id = _fixture()
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/action-executions/{execution_id}/analyze", json={"operator": "max"}
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    with SessionLocal() as db:
+        execution = db.get(ActionExecution, execution_id)
+        message = db.get(ChatMessage, payload["message_id"])
+        audit = (
+            db.query(AuditEvent)
+            .filter(
+                AuditEvent.event_type == "action_execution_analyzed",
+                AuditEvent.details.contains(f'"execution_id": {execution_id}'),
+            )
+            .order_by(AuditEvent.id.desc())
+            .first()
+        )
+        assert execution.analysis_attached_at is not None
+        assert execution.analysis_status == "analyzed"
+        assert message is not None
+        assert "Analysis of read-only SSH check" in message.content
+        assert audit is not None
+
+
 def test_unknown_execution_id_returns_404():
     with TestClient(app) as client:
         response = client.get("/api/action-executions/999999999")

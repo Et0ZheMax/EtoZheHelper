@@ -210,7 +210,7 @@ def _append_assistant_message(db: Session, session: ChatSession, content: str) -
     session.updated_at = utcnow()
     db.add(message)
     db.add(session)
-    db.commit()
+    db.flush()
     db.refresh(message)
     return message
 
@@ -229,13 +229,15 @@ def attach_action_execution(
     message = _append_assistant_message(db, session, _attach_message(db, execution, run, payload))
     execution.chat_attached_at = utcnow()
     db.add(execution)
-    db.commit()
-    db.refresh(execution)
+    # log_event currently commits the active transaction, so keep it last to persist
+    # the message, execution timestamp, and audit event together.
     log_event(
         db,
         "action_execution_attached",
         {"execution_id": execution.id, "run_id": run.id, "session_id": session.id, "message_id": message.id, "operator": payload.operator},
     )
+    db.refresh(execution)
+    db.refresh(message)
     return ActionExecutionAttachResponse(
         execution_id=execution.id,
         session_id=session.id,
@@ -257,10 +259,10 @@ def analyze_action_execution(
     execution.analysis_summary = (analysis.summary or "")[:MAX_ANALYSIS_SUMMARY_CHARS] or None
     execution.analysis_attached_at = utcnow()
     db.add(execution)
-    db.commit()
-    db.refresh(execution)
 
     message = _append_assistant_message(db, session, _analysis_message(db, execution, run, payload.operator, payload.note, truncated))
+    # log_event currently commits the active transaction, so keep it last to persist
+    # the analysis fields, assistant message, and audit event together.
     log_event(
         db,
         "action_execution_analyzed",
@@ -273,6 +275,8 @@ def analyze_action_execution(
             "analysis_status": execution.analysis_status,
         },
     )
+    db.refresh(execution)
+    db.refresh(message)
     return ActionExecutionAnalyzeResponse(
         execution_id=execution.id,
         session_id=session.id,
