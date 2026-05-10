@@ -636,3 +636,23 @@ curl "http://127.0.0.1:8000/api/kb/document?path=README.md"
 - Zip import блокирует path traversal и не пишет вне target.
 - Document API читает только документы, уже загруженные из KB, и не раскрывает server absolute paths.
 - UI вставляет document content и snippets как plain text, без unsanitized HTML rendering.
+
+## Execution Results in Investigation Timeline
+
+Stage 18 lets operators attach read-only SSH execution results to the current investigation and run the local deterministic analyzer over stdout/stderr. This does not add any new execution capability: commands still must come from allowlisted Action Policy previews, be prepared, approved, pass readiness, and execute through the read-only SSH-agent path.
+
+Execution results can be attached as compact chat messages, and analysis can be saved as an assistant message in the same investigation. Large stdout/stderr is truncated in chat while full execution detail remains available through the execution detail endpoint/UI.
+
+```bash
+curl http://127.0.0.1:8000/api/action-executions/1
+
+curl -X POST http://127.0.0.1:8000/api/action-executions/1/attach \
+  -H "Content-Type: application/json" \
+  -d '{"operator":"max","include_stdout":false,"note":"Attached disk check"}'
+
+curl -X POST http://127.0.0.1:8000/api/action-executions/1/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"operator":"max","note":"Analyze disk output"}'
+```
+
+Stage 18 does not introduce arbitrary commands, terminal access, sudo, write actions, or external LLM/API calls. It only stores and analyzes output from already approved read-only ActionRun executions.

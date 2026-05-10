@@ -102,6 +102,8 @@ def _ensure_sqlite_action_executions_columns() -> None:
         "analysis_json": "ALTER TABLE action_executions ADD COLUMN analysis_json TEXT",
         "analysis_summary": "ALTER TABLE action_executions ADD COLUMN analysis_summary TEXT",
         "analysis_status": "ALTER TABLE action_executions ADD COLUMN analysis_status VARCHAR(32)",
+        "analysis_attached_at": "ALTER TABLE action_executions ADD COLUMN analysis_attached_at DATETIME",
+        "chat_attached_at": "ALTER TABLE action_executions ADD COLUMN chat_attached_at DATETIME",
     }
     with engine.begin() as connection:
         for column_name, statement in migrations.items():

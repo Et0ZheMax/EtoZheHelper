@@ -555,3 +555,20 @@ button.compact.danger:hover { background: #fee2e2; }
     font-weight: 800;
     color: var(--safe-text);
 }
+.execution-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+.execution-raw {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+.execution-raw pre {
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
