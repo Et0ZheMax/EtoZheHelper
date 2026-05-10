@@ -14,18 +14,26 @@
 }
 
 * { box-sizing: border-box; }
+html,
+body {
+    min-height: 100%;
+}
 body {
     margin: 0;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--bg);
     color: var(--text);
+    min-height: 100vh;
+    overflow: hidden;
 }
 .layout {
     display: grid;
-    grid-template-columns: minmax(250px, 300px) minmax(360px, 1fr) minmax(280px, 360px);
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr) minmax(280px, 380px);
     gap: 16px;
-    min-height: 100vh;
+    height: 100vh;
+    min-height: 0;
     padding: 16px;
+    overflow: hidden;
 }
 .card {
     background: var(--card);
@@ -33,7 +41,11 @@ body {
     border-radius: 18px;
     box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
 }
-.sidebar, .sources { padding: 20px; }
+.sidebar, .sources {
+    min-height: 0;
+    padding: 20px;
+    overflow-y: auto;
+}
 h1, h2 { margin: 0 0 10px; }
 h2 { font-size: 18px; }
 .muted { color: var(--muted); line-height: 1.45; }
@@ -80,9 +92,10 @@ h2 { font-size: 18px; }
     font-size: 13px;
 }
 .chat {
-    display: flex;
-    min-height: calc(100vh - 32px);
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    height: 100%;
+    min-height: 0;
     overflow: hidden;
 }
 .chat-header {
@@ -102,7 +115,7 @@ h2 { font-size: 18px; }
     font-size: 12px;
 }
 .messages {
-    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 20px;
 }
@@ -136,11 +149,14 @@ pre, code {
 code { padding: 2px 5px; }
 pre { padding: 12px; overflow-x: auto; }
 .composer {
+    position: sticky;
+    bottom: 0;
     display: grid;
     grid-template-columns: 1fr auto;
     gap: 12px;
     padding: 16px;
     border-top: 1px solid var(--border);
+    background: var(--card);
 }
 textarea {
     width: 100%;
@@ -196,8 +212,25 @@ button.secondary:hover { background: #334155; }
 }
 .empty { color: var(--muted); padding: 12px; border: 1px dashed var(--border); border-radius: 12px; }
 @media (max-width: 980px) {
-    .layout { grid-template-columns: 1fr; }
-    .chat { min-height: 70vh; }
+    body {
+        overflow: auto;
+    }
+    .layout {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
+    }
+    .sidebar, .sources {
+        overflow-y: visible;
+    }
+    .chat {
+        height: auto;
+        min-height: 70vh;
+    }
+    .messages {
+        max-height: 55vh;
+    }
     .composer { grid-template-columns: 1fr; }
     button { min-height: 44px; }
 }
